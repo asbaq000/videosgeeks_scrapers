@@ -1,0 +1,692 @@
+"""Command line interface: scrape Upwork jobs to stdout or a file.
+
+    python -m upwork_scraper --pages 2 --format json --out jobs.json
+    python -m upwork_scraper --query "python scraper" --format csv --out jobs.csv
+    python -m upwork_scraper --watch --interval 120 --out feed.jsonl
+
+Logs go to stderr, data goes to stdout, so piping into `jq` works.
+"""
+
+import argparse
+import csv
+import io
+import json
+import logging
+import signal
+import sys
+import threading
+
+from upwork_scraper import config
+from upwork_scraper.enrich import (
+    BROWSER_REQUIRED_HELP,
+    BrowserFetcher,
+    ClientEnricher,
+    HumanDelay,
+)
+from upwork_scraper.enrich.browser_fetcher import (
+    DEFAULT_PROFILE_DIR,
+    LOGIN_PROFILE_DIR,
+    profile_for,
+)
+from upwork_scraper.enrich.client_fetcher import parse_client_info
+from upwork_scraper.log_config import init_logger
+from upwork_scraper.models.job_models import Job
+from upwork_scraper.niches import (
+    NICHE_DIR,
+    available_niches,
+    load_niche,
+    read_keywords_file,
+)
+from upwork_scraper.proxies.proxy_manager import (
+    NoProxyManager,
+    build_proxy_manager,
+    check_proxies,
+)
+from upwork_scraper.scraper import UpworkScraper
+
+LOGGER = logging.getLogger(__name__)
+
+CSV_FIELDS = [
+    "cipher", "title", "description", "link", "skills",
+    "published_date", "job_type", "is_hourly",
+    "hourly_low", "hourly_high", "budget",
+    "duration_weeks", "contractor_tier", "matched_query",
+]
+
+
+# Client fields worth a spreadsheet column, flattened as client_*.
+CLIENT_CSV_FIELDS = [
+    "country", "city", "member_since", "total_spent", "total_hires",
+    "active_hires", "industry", "company_size", "proposals", "last_viewed",
+    "interviewing", "invites_sent", "job_location", "fetch_status",
+]
+
+
+def _to_row(job: Job, with_client: bool) -> dict:
+    data = job.model_dump(mode="json")
+    row = {field: data.get(field) for field in CSV_FIELDS}
+    skills = row.get("skills")
+    row["skills"] = "|".join(skills) if skills else ""
+
+    if with_client:
+        client = data.get("client") or {}
+        for field in CLIENT_CSV_FIELDS:
+            row[f"client_{field}"] = client.get(field)
+    return row
+
+
+def csv_fields(jobs: list[Job]) -> list[str]:
+    """Job columns, plus client_* columns once anything has been enriched."""
+    if any(j.client is not None for j in jobs):
+        return CSV_FIELDS + [f"client_{f}" for f in CLIENT_CSV_FIELDS]
+    return CSV_FIELDS
+
+
+def render(jobs: list[Job], fmt: str) -> str:
+    if fmt == "json":
+        return json.dumps(
+            [j.model_dump(mode="json") for j in jobs], indent=2, ensure_ascii=False
+        )
+
+    if fmt == "jsonl":
+        return "\n".join(
+            json.dumps(j.model_dump(mode="json"), ensure_ascii=False) for j in jobs
+        )
+
+    if fmt == "csv":
+        fields = csv_fields(jobs)
+        with_client = len(fields) > len(CSV_FIELDS)
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(_to_row(j, with_client) for j in jobs)
+        return buf.getvalue().rstrip("\n")
+
+    raise ValueError(f"Unknown format: {fmt}")
+
+
+def use_utf8_streams():
+    """Force UTF-8 on stdout/stderr.
+
+    Job titles routinely contain arrows, em-dashes, emoji and non-Latin script.
+    On Windows a redirected stream defaults to the ANSI code page (cp1252),
+    which raises UnicodeEncodeError mid-write — so `... > jobs.jsonl` would die
+    partway through. Console output is unaffected either way.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError, ValueError):
+            pass  # already wrapped, or not a real stream (e.g. pytest capture)
+
+
+def _emit(text: str, out: str | None, append: bool = False):
+    if not out:
+        sys.stdout.write(text + "\n")
+        sys.stdout.flush()
+        return
+
+    mode = "a" if append else "w"
+    with open(out, mode, encoding="utf-8", newline="") as fh:
+        fh.write(text + "\n")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="upwork-scraper",
+        description="Scrape public Upwork job listings (no database required).",
+    )
+    parser.add_argument(
+        "--pages", type=int, default=config.MAX_PAGES,
+        help=f"pages to fetch, 50 jobs each (default: {config.MAX_PAGES})",
+    )
+    parser.add_argument(
+        "--query", action="append", default=None,
+        help="keyword filter. Repeat or comma-separate for several: "
+             "--query react --query 'web scraping'. Adds to --niche keywords.",
+    )
+    parser.add_argument(
+        "--niche", default=None, metavar="NAME_OR_PATH",
+        help="use a niche preset's keywords and relevance filter, e.g. 'video'. "
+             "Also accepts a path to your own JSON file.",
+    )
+    parser.add_argument(
+        "--keywords-file", default=None, metavar="PATH",
+        help="extra keywords, one per line (# comments allowed)",
+    )
+    parser.add_argument(
+        "--list-niches", action="store_true", help="show built-in niches and exit"
+    )
+    parser.add_argument(
+        "--check-proxies", action="store_true",
+        help="test each configured proxy against Upwork and exit",
+    )
+    parser.add_argument(
+        "--login", action="store_true",
+        help="open the scraper's browser so you can sign in to Upwork yourself. "
+             "The session is kept in its profile and unlocks client hire rate.",
+    )
+    parser.add_argument(
+        "--login-status", action="store_true",
+        help="report whether the signed-in profile is still signed in, and exit",
+    )
+    parser.add_argument(
+        "--login-timeout", type=int, default=300, metavar="SECONDS",
+        help="how long --login waits for you to finish signing in (default: 300)",
+    )
+    parser.add_argument(
+        "--logged-in", action="store_true",
+        help="enrich using the signed-in browser profile, which adds client "
+             "hire rate and jobs-posted. Off by default: runs are anonymous "
+             "unless you ask for this. Set up once with --login.",
+    )
+    parser.add_argument(
+        "--no-filter", action="store_true",
+        help="keep every search result instead of applying the niche's relevance filter",
+    )
+    parser.add_argument(
+        "--backfill", action="store_true",
+        help="fetch already-posted jobs first (deep pagination). Combine with "
+             "--watch to backfill and then stream new ones.",
+    )
+    parser.add_argument(
+        "--backfill-pages", type=int, default=20, metavar="N",
+        help="pages per keyword when backfilling, 50 jobs each (default: 20). "
+             "Upwork caps pagination at ~101 pages.",
+    )
+    parser.add_argument(
+        "--max-age", type=float, default=None, metavar="MINUTES",
+        help="only keep jobs published within the last N minutes",
+    )
+    parser.add_argument(
+        "--max-age-days", type=float, default=None, metavar="DAYS",
+        help="only keep jobs published within the last N days (e.g. 2)",
+    )
+    parser.add_argument(
+        "--enrich-clients", action="store_true",
+        help="after jobs are fetched, run the separate stage that looks up each "
+             "job poster (country, city, member since) and the job's proposal "
+             "counts. Needs a browser fetcher — see GUIDE.md.",
+    )
+    parser.add_argument(
+        "--separate-clients", action="store_true",
+        help="also write client details to their own file (they are merged into "
+             "each job under `client` either way)",
+    )
+    parser.add_argument(
+        "--clients-out", default=None, metavar="PATH",
+        help="path for the separate client file (implies --separate-clients "
+             "behaviour when that flag is set)",
+    )
+    parser.add_argument(
+        "--enrich-delay", nargs=2, type=float, default=None,
+        metavar=("MIN", "MAX"),
+        help="seconds between client requests, randomised in this range "
+             "(default: 4 11). Raise it if you get blocked.",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="keep only the newest N jobs. With --enrich-clients every one of "
+             "them gets client details, so there are no null clients.",
+    )
+    parser.add_argument(
+        "--enrich-limit", type=int, default=None, metavar="N",
+        help="enrich only the newest N of the jobs kept (each is a page "
+             "request, ~8s). Omit to enrich all of them.",
+    )
+    parser.add_argument(
+        "--no-browser", action="store_true",
+        help="enrich over plain HTTP instead of a browser (Cloudflare will block it)",
+    )
+    parser.add_argument(
+        "--headful", action="store_true",
+        help="show the browser window on screen (default: parked off-screen)",
+    )
+    parser.add_argument(
+        "--browser-headless", action="store_true",
+        help="run the browser headless. Cloudflare detects this — expect blocks.",
+    )
+    parser.add_argument(
+        "--skip-backlog", action="store_true",
+        help="watch mode: ignore jobs that already existed at startup",
+    )
+    parser.add_argument(
+        "--sort", default="recency", help="Upwork sort order (default: recency)"
+    )
+    parser.add_argument(
+        "--format", dest="fmt", choices=["json", "jsonl", "csv"], default="json",
+        help="output format (default: json)",
+    )
+    parser.add_argument("--out", default=None, help="write to this file instead of stdout")
+    parser.add_argument(
+        "--watch", action="store_true", help="keep scraping on an interval"
+    )
+    parser.add_argument(
+        "--interval", type=int, default=config.SCRAPE_INTERVAL,
+        help=f"seconds between cycles when watching (default: {config.SCRAPE_INTERVAL})",
+    )
+    parser.add_argument(
+        "--webshare-url", default=None,
+        help="Webshare proxy list URL (falls back to WEBSHARE_URL env var)",
+    )
+    parser.add_argument(
+        "--no-proxy", action="store_true", help="ignore WEBSHARE_URL and connect directly"
+    )
+    parser.add_argument(
+        "--pin-proxy", action="store_true",
+        help="send every page through the same proxy that fetched the token",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None, help="concurrent page fetchers"
+    )
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+    )
+    return parser
+
+
+def parse_queries(raw: list[str] | None) -> list[str] | None:
+    """`--query a --query "b,c"` -> ["a", "b", "c"]."""
+    if not raw:
+        return None
+    keywords = [k.strip() for value in raw for k in value.split(",") if k.strip()]
+    return keywords or None
+
+
+def resolve_keywords(args) -> tuple[list[str] | None, object | None]:
+    """Combine niche preset, --keywords-file and --query into one keyword list.
+
+    Returns the keywords and the niche (whose relevance filter the caller
+    applies), or (None, None) for an unfiltered site-wide scrape.
+    """
+    extra = parse_queries(args.query) or []
+    if args.keywords_file:
+        extra = read_keywords_file(args.keywords_file) + extra
+
+    if not args.niche:
+        return (extra or None), None
+
+    niche = load_niche(args.niche).with_extra_keywords(extra)
+    LOGGER.info(
+        "Niche '%s': %d keywords%s",
+        niche.name,
+        len(niche.keywords),
+        f" (+{len(extra)} of your own)" if extra else "",
+    )
+    return niche.keywords, niche
+
+
+def report_proxy_check(args) -> int:
+    """Print how each proxy fares against Upwork. Exit code 1 if none work."""
+    manager = (
+        NoProxyManager() if args.no_proxy else build_proxy_manager(args.webshare_url)
+    )
+    if isinstance(manager, NoProxyManager):
+        print("No proxies configured — set WEBSHARE_API_KEY in .env")
+        return 1
+
+    results = check_proxies(manager)
+    print(f"\nTesting {len(results)} proxies against upwork.com\n")
+    for proxy, ok, detail in results:
+        print(f"  {'OK     ' if ok else 'BLOCKED'} {proxy.label:<40} {detail}")
+
+    working = sum(1 for _, ok, _ in results if ok)
+    print(f"\n{working}/{len(results)} usable with Upwork")
+
+    if not working:
+        print(
+            "\nNone of these work against Upwork. Datacenter proxy IPs are\n"
+            "blocked at the edge — reaching an IP-echo service proves the proxy\n"
+            "is alive, not that Upwork will accept it.\n\n"
+            "Options:\n"
+            "  - Run without proxies. They are optional, and direct works.\n"
+            "  - Buy residential proxies; Webshare sells them separately."
+        )
+    return 0 if working else 1
+
+
+LOGIN_URL = "https://www.upwork.com/ab/account-security/login"
+
+LOGIN_NOTES = """
+A few things worth knowing before you do this:
+
+  - Signing in is what unlocks hire rate. Upwork sends `postedCount` (the
+    denominator) only to signed-in sessions.
+  - The session lives in this scraper's own Chrome profile, not in a file and
+    not in your normal browser. Nothing is copied anywhere else.
+  - Automated access using your signed-in session is against Upwork's terms.
+    The risk moves from your IP to your account, and no amount of pacing
+    removes that. Enrichment stays slow for a reason.
+  - To undo it, sign out in the window this opens, or delete the profile at
+    %s
+""".strip()
+
+
+def _sample_job_url() -> str | None:
+    """A live job URL to test what a signed-in session actually returns."""
+    try:
+        jobs = UpworkScraper().scrape(max_pages=1, query="video editing")
+        for job in jobs:
+            if job.link:
+                return job.link
+    except Exception:
+        return None
+    return None
+
+
+def _report_gated_fields(html: str, cipher: str) -> bool:
+    """Show whether the signed-in-only client fields came through."""
+    info = parse_client_info(html, cipher)
+    print()
+    print("  hire rate         ", info.hire_rate)
+    print("  jobs posted       ", info.total_posted_jobs)
+    print("  open jobs         ", info.open_jobs)
+    print("  jobs with hires   ", info.total_jobs_with_hires)
+    print("  total hires       ", info.total_hires)
+    return info.total_posted_jobs is not None or info.hire_rate is not None
+
+
+def run_login(args) -> int:
+    """Open the browser for a manual sign-in, then verify what it unlocked."""
+    print(LOGIN_NOTES % LOGIN_PROFILE_DIR)
+
+    fetcher = BrowserFetcher(
+        headless=False, offscreen=False, profile_dir=LOGIN_PROFILE_DIR
+    ).start()
+    try:
+        fetcher.open_page(LOGIN_URL)
+        print(
+            "\nA browser window is open at Upwork's sign-in page.\n"
+            "Sign in there — including any 2FA. This notices by itself when you\n"
+            f"are done, and gives up after {args.login_timeout // 60} minutes.\n"
+        )
+
+        if not fetcher.wait_for_login(timeout_s=args.login_timeout):
+            print(
+                "No Upwork session appeared in the browser profile.\n"
+                "Nothing was changed — anonymous runs are unaffected."
+            )
+            return 1
+
+        print("Signed in. Checking what that unlocks...")
+
+        url = _sample_job_url()
+        if not url:
+            print("Signed in, but no sample job could be fetched to verify with.")
+            return 0
+
+        print(f"\nChecking what a signed-in session returns for:\n  {url}")
+        status, html = fetcher.fetch(url)
+        if status != 200:
+            print(f"  page not retrieved (HTTP {status})")
+            return 1
+
+        unlocked = _report_gated_fields(html, url.rsplit("/", 1)[-1])
+        print(
+            "\n  -> hire rate is now available; enrichment will include it."
+            if unlocked else
+            "\n  -> still no hire rate. Either the sign-in did not take, or this\n"
+            "     client has no posting history. Try --login-status, or run\n"
+            "     --login again and check the window really shows you signed in."
+        )
+        return 0
+    finally:
+        fetcher.close()
+
+
+def report_login_status(args) -> int:
+    """Fetch one job page and report whether signed-in-only fields appear."""
+    url = _sample_job_url()
+    if not url:
+        print("Could not fetch a job to test with.")
+        return 1
+
+    fetcher = BrowserFetcher(
+        headless=False, offscreen=not args.headful, profile_dir=LOGIN_PROFILE_DIR
+    ).start()
+    try:
+        status, html = fetcher.fetch(url)
+        if status != 200:
+            print(f"Page not retrieved (HTTP {status})")
+            return 1
+        signed_in = "global-signup-desktop-login" not in html
+        print(f"Profile: {LOGIN_PROFILE_DIR}")
+        print(f"Signed in: {signed_in}")
+        _report_gated_fields(html, url.rsplit("/", 1)[-1])
+        return 0 if signed_in else 1
+    finally:
+        fetcher.close()
+
+
+def resolve_max_age(args) -> float | None:
+    """--max-age-days is just a friendlier --max-age; days win if both given."""
+    if args.max_age_days is not None:
+        return args.max_age_days * 24 * 60
+    return args.max_age
+
+
+def build_enricher(args, proxy_manager):
+    """The client-lookup stage. Returns None when not requested."""
+    if not args.enrich_clients:
+        return None
+
+    min_delay, max_delay = args.enrich_delay or (
+        config.ENRICH_MIN_DELAY, config.ENRICH_MAX_DELAY
+    )
+    # Cloudflare 403s plain HTTP on job pages, so a browser is the default
+    # transport here. --no-browser opts out (and will be blocked).
+    fetcher = None
+    if not args.no_browser:
+        try:
+            fetcher = BrowserFetcher(
+                proxy_manager=proxy_manager,
+                headless=args.browser_headless,
+                offscreen=not args.headful,
+                profile_dir=profile_for(args.logged_in),
+            ).start()
+            if args.logged_in:
+                LOGGER.info("Using the signed-in browser profile")
+        except RuntimeError as e:
+            LOGGER.error("%s", e)
+            return None
+    else:
+        LOGGER.warning(
+            "--no-browser: plain HTTP will be blocked on job pages.\n%s",
+            BROWSER_REQUIRED_HELP,
+        )
+
+    enricher = ClientEnricher(
+        proxy_manager=proxy_manager,
+        cookie=config.UPWORK_COOKIE,
+        delay=HumanDelay(min_seconds=min_delay, max_seconds=max_delay),
+        html_fetcher=fetcher,
+    )
+
+    if isinstance(proxy_manager, NoProxyManager):
+        LOGGER.warning(
+            "Enriching without proxies: every request comes from your own IP. "
+            "Set WEBSHARE_URL to spread the load."
+        )
+    return enricher
+
+
+def apply_limit(jobs, args):
+    """Trim to the newest N jobs, before enrichment so all of them get enriched."""
+    if not args.limit or len(jobs) <= args.limit:
+        return jobs
+    LOGGER.info("Keeping the newest %d of %d jobs", args.limit, len(jobs))
+    return jobs[: args.limit]
+
+
+def run_enrichment(enricher, jobs, args) -> None:
+    """Separate pass over already-scraped jobs, attaching client details.
+
+    The fetching stays its own stage — jobs are scraped in full first, and an
+    enrichment failure can never affect them. The *output* is merged: each job
+    carries its poster's details under `client`, so a job can be qualified on
+    client history without joining two files. `--separate-clients` restores the
+    two-file behaviour.
+    """
+    if not enricher or not jobs:
+        return
+
+    targets = jobs[: args.enrich_limit] if args.enrich_limit else jobs
+    results = enricher.enrich_all(targets)
+    if not results:
+        return
+
+    by_cipher = {r.cipher: r for r in results}
+    for job in jobs:
+        if job.cipher in by_cipher:
+            job.client = by_cipher[job.cipher]
+
+    usable = sum(1 for r in results if r.fetch_status == "ok")
+    LOGGER.info("Client details attached for %d/%d jobs", usable, len(targets))
+
+    if not args.separate_clients:
+        return
+
+    # Optional second copy in its own file, for anyone joining on cipher.
+    as_array = args.fmt == "json" and not args.watch
+    suffix = "clients.json" if as_array else "clients.jsonl"
+    out = args.clients_out or (f"{args.out}.{suffix}" if args.out else None)
+
+    records = [r.model_dump(mode="json") for r in results]
+    text = (
+        json.dumps(records, indent=2, ensure_ascii=False)
+        if as_array
+        else "\n".join(json.dumps(r, ensure_ascii=False) for r in records)
+    )
+    _emit(text, out)
+    LOGGER.info("Client details also written to %s", out or "stdout")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    use_utf8_streams()
+    init_logger(args.log_level)
+
+    if args.list_niches:
+        print("Built-in niches (copy and edit any of these files):\n")
+        for name in available_niches():
+            niche = load_niche(name)
+            print(f"  {name:<10} {len(niche.keywords):>3} keywords — {niche.description}")
+            print(f"  {'':<10} {NICHE_DIR / f'{name}.json'}\n")
+        return 0
+
+    if args.check_proxies:
+        return report_proxy_check(args)
+
+    if args.login:
+        return run_login(args)
+
+    if args.login_status:
+        return report_login_status(args)
+
+    queries, niche = resolve_keywords(args)
+    max_age_minutes = resolve_max_age(args)
+    job_filter = None if (niche is None or args.no_filter) else niche.is_relevant
+
+    proxy_manager = (
+        NoProxyManager() if args.no_proxy else build_proxy_manager(args.webshare_url)
+    )
+    scraper = UpworkScraper(proxy_manager=proxy_manager, workers=args.workers)
+    enricher = build_enricher(args, proxy_manager)
+
+    # Line-oriented formats are required whenever output is appended in stages.
+    fmt = args.fmt
+    appending = args.watch or (args.backfill and args.watch)
+    if args.out and appending and fmt == "json":
+        fmt = "jsonl"
+        LOGGER.info("Appending to a file — using jsonl instead of json")
+
+    backfilled: list[str] = []
+    wrote_anything = False
+
+    if args.backfill:
+        keyword_count = len(queries) if queries else 1
+        LOGGER.info(
+            "Backfilling already-posted jobs: %d keyword(s) x up to %d pages "
+            "(~%d requests, fewer where a keyword has less results)",
+            keyword_count, args.backfill_pages, keyword_count * args.backfill_pages,
+        )
+        jobs = scraper.scrape(
+            max_pages=args.backfill_pages,
+            query=queries,
+            sort=args.sort,
+            pin_proxy=args.pin_proxy,
+            max_age_minutes=max_age_minutes,
+            job_filter=job_filter,
+        )
+        LOGGER.info("Backfill complete: %d unique jobs", len(jobs))
+        jobs = apply_limit(jobs, args)
+        backfilled = [j.cipher for j in jobs if j.cipher]
+
+        run_enrichment(enricher, jobs, args)
+
+        text = render(jobs, fmt if args.watch else args.fmt)
+        _emit(text, args.out)
+        wrote_anything = True
+
+        if not args.watch:
+            return 0
+
+    elif not args.watch:
+        jobs = scraper.scrape(
+            max_pages=args.pages,
+            query=queries,
+            sort=args.sort,
+            pin_proxy=args.pin_proxy,
+            max_age_minutes=max_age_minutes,
+            job_filter=job_filter,
+        )
+        LOGGER.info("Scraped %d jobs", len(jobs))
+        jobs = apply_limit(jobs, args)
+        run_enrichment(enricher, jobs, args)
+        _emit(render(jobs, args.fmt), args.out)
+        return 0
+
+    stop = threading.Event()
+
+    def _handle_signal(sig, _frame):
+        LOGGER.info("Received %s, shutting down...", signal.Signals(sig).name)
+        stop.set()
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _handle_signal)
+
+    wrote_header = wrote_anything
+    for jobs in scraper.scrape_loop(
+        interval=args.interval,
+        max_pages=args.pages,
+        query=queries,
+        sort=args.sort,
+        pin_proxy=args.pin_proxy,
+        max_age_minutes=max_age_minutes,
+        skip_backlog=args.skip_backlog,
+        job_filter=job_filter,
+        initial_seen=backfilled,
+        stop_event=stop,
+    ):
+        if not jobs:
+            LOGGER.info("No new jobs this cycle")
+            continue
+
+        jobs = apply_limit(jobs, args)
+        run_enrichment(enricher, jobs, args)
+
+        text = render(jobs, fmt)
+        if fmt == "csv" and wrote_header:
+            text = text.split("\n", 1)[1] if "\n" in text else ""
+        if text:
+            _emit(text, args.out, append=wrote_header)
+            wrote_header = True
+        LOGGER.info("Emitted %d new jobs", len(jobs))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
