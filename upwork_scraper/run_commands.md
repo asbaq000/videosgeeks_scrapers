@@ -1,3 +1,14 @@
+important ones 
+fetch 10 latest to 2 days old jobs with full data but without hire rate
+
+python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 10 --enrich-clients --out jobs.json
+
+fetch 10 latest to 2 days old jobs with full data with hire rate (full data)
+python -m upwork_scraper --reset-login
+python -m upwork_scraper --login
+python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 3 --enrich-clients --logged-in --out jobs.json
+
+
 The Standard Run
 
 bash
@@ -9,6 +20,11 @@ The "Get Everything" Run
 bash
 python -m upwork_scraper --niche video --pages 1 --enrich-clients --out jobs.json
 Scrapes jobs AND opens the background browser to fetch all the rich client details (country, hire rate, etc).
+
+
+fetch 10 latest to 2 days old jobs with full data but without hire rate
+python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 10 --enrich-clients --out jobs.json
+
 
 The "Testing" Run
 

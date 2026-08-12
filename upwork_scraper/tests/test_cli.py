@@ -10,6 +10,7 @@ from upwork_scraper.cli import (
     build_parser,
     main,
     build_enricher,
+    ensure_signed_in,
     render,
     resolve_keywords,
     resolve_max_age,
@@ -737,8 +738,9 @@ class TestProfileIsolation:
         assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
 
     @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
     @patch("upwork_scraper.cli.config")
-    def test_logged_in_flag_switches_profile(self, mock_config, mock_browser):
+    def test_logged_in_flag_switches_profile(self, mock_config, _ensure, mock_browser):
         from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
 
         mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
@@ -758,3 +760,216 @@ class TestProfileIsolation:
         report_login_status(build_parser().parse_args([]))
 
         assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+
+class TestProfileIsolation:
+    """Anonymous and signed-in runs must not share a browser profile."""
+
+    def test_profiles_are_different_directories(self):
+        from upwork_scraper.enrich.browser_fetcher import (
+            DEFAULT_PROFILE_DIR,
+            LOGIN_PROFILE_DIR,
+            profile_for,
+        )
+
+        assert DEFAULT_PROFILE_DIR != LOGIN_PROFILE_DIR
+        assert profile_for(False) == DEFAULT_PROFILE_DIR
+        assert profile_for(True) == LOGIN_PROFILE_DIR
+
+    def test_logged_in_defaults_off(self):
+        assert build_parser().parse_args([]).logged_in is False
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.config")
+    def test_enrichment_uses_the_anonymous_profile_by_default(
+        self, mock_config, mock_browser
+    ):
+        from upwork_scraper.enrich.browser_fetcher import DEFAULT_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(build_parser().parse_args(["--enrich-clients"]), MagicMock())
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
+    @patch("upwork_scraper.cli.config")
+    def test_logged_in_flag_switches_profile(self, mock_config, _ensure, mock_browser):
+        from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(
+            build_parser().parse_args(["--enrich-clients", "--logged-in"]), MagicMock()
+        )
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli._sample_job_url", return_value="https://u/~a")
+    def test_login_status_checks_the_signed_in_profile(self, _url, mock_browser):
+        from upwork_scraper.cli import report_login_status
+        from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
+
+        mock_browser.return_value.start.return_value.fetch.return_value = (200, "<html>")
+        report_login_status(build_parser().parse_args([]))
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+
+class TestResetLogin:
+
+    def test_flag_defaults_off(self):
+        assert build_parser().parse_args([]).reset_login is False
+
+    def test_reports_when_there_is_nothing_to_reset(self, tmp_path, capsys, monkeypatch):
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import reset_login_profile
+
+        monkeypatch.setattr(cli_mod, "LOGIN_PROFILE_DIR", tmp_path / "missing")
+
+        assert reset_login_profile() == 0
+        assert "Nothing to reset" in capsys.readouterr().out
+
+    def test_deletes_the_profile(self, tmp_path, capsys, monkeypatch):
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import reset_login_profile
+
+        profile = tmp_path / "browser_profile_login"
+        (profile / "Default").mkdir(parents=True)
+        (profile / "session.json").write_text("[]", encoding="utf-8")
+        monkeypatch.setattr(cli_mod, "LOGIN_PROFILE_DIR", profile)
+
+        assert reset_login_profile() == 0
+        assert not profile.exists()
+        assert "Deleted" in capsys.readouterr().out
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    def test_login_saves_the_session(self, mock_browser, monkeypatch, capsys):
+        """The save call was missing once — this pins it."""
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import run_login
+
+        started = mock_browser.return_value.start.return_value
+        started.wait_for_login.return_value = True
+        started.save_session.return_value = 7
+        started.session_path = "C:/profile/session.json"
+        monkeypatch.setattr(cli_mod, "_sample_job_url", lambda: None)
+
+        run_login(build_parser().parse_args(["--login"]))
+
+        assert started.save_session.called
+        assert "Session saved (7 cookies)" in capsys.readouterr().out
+
+
+class TestAutoLogin:
+    """--logged-in should heal a dead session by itself, within limits."""
+
+    def _args(self, extra=()):
+        return build_parser().parse_args(["--enrich-clients", "--logged-in", *extra])
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="live")
+    def test_live_session_signs_in_nothing(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_signed_out_triggers_login_without_reset(
+        self, mock_probe, mock_reset, mock_login
+    ):
+        """No session is not a broken profile — do not throw the profile away."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 1
+        assert mock_reset.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_rate_limited_resets_before_signing_in(
+        self, mock_probe, mock_reset, mock_login
+    ):
+        """A flagged profile stays flagged; sign in on a clean one."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["rate_limited", "live"]
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_reset.call_count == 1
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_only_one_sign_in_attempt(self, mock_probe, mock_login):
+        """A refused sign-in must not loop."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "signed_out"]
+
+        assert ensure_signed_in(self._args()) is False
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.run_login", return_value=1)
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_failed_login_falls_back(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is False
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_watch_mode_never_opens_a_window(self, _probe, mock_login):
+        """An unattended loop must not block on a window nobody will see."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args(["--watch"])) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_no_auto_login_opts_out(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args(["--no-auto-login"])) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="unknown")
+    def test_unknown_proceeds_without_signing_in(self, _probe, mock_login):
+        """A network blip is not a reason to open a login window."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=False)
+    @patch("upwork_scraper.cli.config")
+    def test_failed_healing_uses_the_anonymous_profile(
+        self, mock_config, _ensure, mock_browser
+    ):
+        from upwork_scraper.enrich.browser_fetcher import DEFAULT_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        enricher = build_enricher(self._args(), MagicMock())
+
+        assert enricher is not None
+        assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
+    @patch("upwork_scraper.cli.config")
+    def test_anonymous_runs_never_call_the_healer(
+        self, mock_config, mock_ensure, mock_browser
+    ):
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(build_parser().parse_args(["--enrich-clients"]), MagicMock())
+
+        assert mock_ensure.call_count == 0

@@ -171,8 +171,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="report whether the signed-in profile is still signed in, and exit",
     )
     parser.add_argument(
+        "--reset-login", action="store_true",
+        help="delete the signed-in browser profile and start clean. Use when a "
+             "profile keeps getting rate limited; you will need --login again.",
+    )
+    parser.add_argument(
         "--login-timeout", type=int, default=300, metavar="SECONDS",
         help="how long --login waits for you to finish signing in (default: 300)",
+    )
+    parser.add_argument(
+        "--no-auto-login", action="store_true",
+        help="with --logged-in, do not open a sign-in window when the session "
+             "is dead; fall back to anonymous instead. Implied by --watch.",
     )
     parser.add_argument(
         "--logged-in", action="store_true",
@@ -387,6 +397,31 @@ def _report_gated_fields(html: str, cipher: str) -> bool:
     return info.total_posted_jobs is not None or info.hire_rate is not None
 
 
+def reset_login_profile() -> int:
+    """Delete the signed-in profile so the next login starts from scratch.
+
+    A profile that keeps getting rate limited carries whatever Upwork has
+    associated with it — cookies, storage, fingerprint state. Starting clean
+    is usually quicker than guessing which part is the problem.
+    """
+    import shutil
+
+    if not LOGIN_PROFILE_DIR.exists():
+        print(f"Nothing to reset — {LOGIN_PROFILE_DIR} does not exist.")
+        return 0
+
+    try:
+        shutil.rmtree(LOGIN_PROFILE_DIR)
+    except OSError as e:
+        print(f"Could not delete the profile: {e}")
+        print("Close any browser window still using it, then try again.")
+        return 1
+
+    print(f"Deleted {LOGIN_PROFILE_DIR}")
+    print("Run --login to sign in again. Anonymous runs are unaffected.")
+    return 0
+
+
 def run_login(args) -> int:
     """Open the browser for a manual sign-in, then verify what it unlocked."""
     print(LOGIN_NOTES % LOGIN_PROFILE_DIR)
@@ -409,7 +444,18 @@ def run_login(args) -> int:
             )
             return 1
 
-        print("Signed in. Checking what that unlocks...")
+        # Google sign-in offers no "keep me logged in", so Upwork may hand out
+        # session-scoped cookies that Chrome drops on exit. Save them with an
+        # explicit expiry rather than relying on a checkbox that isn't there.
+        saved = fetcher.save_session()
+        if saved:
+            print(f"\n  Session saved ({saved} cookies) — it will persist between runs.")
+            print(f"  Stored in {fetcher.session_path}")
+            print("  That file holds live tokens; treat it like a password.")
+        else:
+            print("\n  !! No Upwork cookies found to save — the sign-in may not have taken.")
+
+        print("\nSigned in. Checking what that unlocks...")
 
         url = _sample_job_url()
         if not url:
@@ -466,6 +512,74 @@ def resolve_max_age(args) -> float | None:
     return args.max_age
 
 
+def probe_session_state(args) -> str:
+    """Ask Upwork about the signed-in profile, then let go of it.
+
+    Opened and closed on its own because Chrome allows one process per
+    profile — the login window and the enrichment browser cannot both hold it.
+    """
+    fetcher = BrowserFetcher(
+        headless=args.browser_headless,
+        offscreen=not args.headful,
+        profile_dir=LOGIN_PROFILE_DIR,
+    ).start()
+    try:
+        return fetcher.session_state()
+    finally:
+        fetcher.close()
+
+
+def ensure_signed_in(args) -> bool:
+    """Get the signed-in profile into a usable state, signing in if needed.
+
+    Returns whether hire rate is available afterwards. At most one sign-in is
+    attempted per run, so a refused login cannot loop.
+
+    Auto sign-in needs a person at the keyboard, so it is skipped in watch
+    mode and whenever --no-auto-login is passed; those fall back to anonymous
+    rather than blocking on a window nobody will see.
+    """
+    state = probe_session_state(args)
+    if state == "live":
+        return True
+    if state == "unknown":
+        # A timeout is not evidence of anything. Try the run as-is.
+        LOGGER.warning("Could not confirm the session — trying it anyway.")
+        return True
+
+    auto = not (args.no_auto_login or args.watch)
+    if not auto:
+        LOGGER.warning(
+            "Session is %s and auto sign-in is off%s — continuing anonymously.",
+            state, " (watch mode)" if args.watch else "",
+        )
+        return False
+
+    if state == "rate_limited":
+        # A flagged profile stays flagged; signing in again on top of it just
+        # reproduces the block, so start from a clean one.
+        LOGGER.warning(
+            "This profile is rate limited. Resetting it and signing in again."
+        )
+        reset_login_profile()
+    else:
+        LOGGER.warning("Not signed in. Opening a sign-in window.")
+
+    if run_login(args) != 0:
+        LOGGER.warning("Sign-in did not complete — continuing anonymously.")
+        return False
+
+    state = probe_session_state(args)
+    if state == "live":
+        LOGGER.info("Signed in — hire rate is available.")
+        return True
+
+    LOGGER.warning(
+        "Still %s after signing in — continuing anonymously.", state
+    )
+    return False
+
+
 def build_enricher(args, proxy_manager):
     """The client-lookup stage. Returns None when not requested."""
     if not args.enrich_clients:
@@ -477,16 +591,32 @@ def build_enricher(args, proxy_manager):
     # Cloudflare 403s plain HTTP on job pages, so a browser is the default
     # transport here. --no-browser opts out (and will be blocked).
     fetcher = None
+    logged_in = args.logged_in
+
+    # Settle the session before opening the enrichment browser: signing in
+    # needs the profile to itself, and Chrome allows one process per profile.
+    if logged_in and not args.no_browser:
+        logged_in = ensure_signed_in(args)
+
     if not args.no_browser:
         try:
             fetcher = BrowserFetcher(
                 proxy_manager=proxy_manager,
                 headless=args.browser_headless,
                 offscreen=not args.headful,
-                profile_dir=profile_for(args.logged_in),
+                profile_dir=profile_for(logged_in),
             ).start()
-            if args.logged_in:
+
+            if logged_in:
+                # ensure_signed_in already settled and verified the session;
+                # re-checking here would just cost another request.
                 LOGGER.info("Using the signed-in browser profile")
+            elif args.logged_in:
+                LOGGER.warning(
+                    "Running anonymously: you still get location, spend, hires, "
+                    "rating and proposals — everything except hire rate and "
+                    "jobs-posted."
+                )
         except RuntimeError as e:
             LOGGER.error("%s", e)
             return None
@@ -577,6 +707,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check_proxies:
         return report_proxy_check(args)
+
+    if args.reset_login:
+        return reset_login_profile()
 
     if args.login:
         return run_login(args)

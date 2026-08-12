@@ -19,3 +19,4 @@ live.jsonl
 data/
 logs/
 .pytest_cache/
+session.json

@@ -34,6 +34,7 @@ Three things that are counter-intuitive and easy to "fix" back into breakage:
    a page was observed returning 403 while still rendering the real content.
 """
 
+import json
 import logging
 import random
 import time
@@ -83,12 +84,55 @@ CHALLENGE_MARKERS = (
 RATE_LIMIT_MARKERS = (
     "we'll be right back",
     "we will be right back",
-    "we&#39;ll be right back",
 )
+
+# Served only to visitors. Their presence is the reliable "signed out" signal —
+# the job search itself loads for anyone, so a successful load proves nothing.
+SIGNED_OUT_MARKERS = (
+    # The search page labels its whole nav as the visitor one. This is the
+    # marker that matters, because the search page is what gets checked.
+    'data-qa="top-nav-visitor-ia"',
+    # Job pages use these instead.
+    'data-qa="global-signup-desktop-login"',
+    'data-qa="global-signup-mobile-login"',
+    "Log in to Upwork",
+)
+
+# Markup that proves a job page actually rendered, whichever variant was
+# served. The signed-out page uses data-qa hooks; the signed-in one renders
+# differently, so content markers are checked too rather than trusting one
+# selector to cover both.
+RENDERED_MARKERS = (
+    'data-qa="client-location"',
+    'data-qa="client-contract-date"',
+    "About the client",
+    "totalAssignments",
+)
+
+
+def _normalise(text: str) -> str:
+    """Lowercase with curly quotes folded to straight ones.
+
+    Upwork's error page uses a typographic apostrophe, so matching on a plain
+    "we'll" silently missed it and the block looked like a render failure.
+    """
+    return (
+        text.lower()
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("&#39;", "'")
+        .replace("&rsquo;", "'")
+    )
 
 # Parks the window ~2400px off-screen. Headful for detection purposes, invisible
 # in practice. The only launch arg used, because args are a detection signal.
 OFFSCREEN_ARGS = ["--window-position=-2400,-2400"]
+
+# Chrome stores window bounds in the profile, so a profile that has been parked
+# off-screen reopens off-screen even without the arg — which strands the login
+# window where it cannot be seen or dragged back. Visible runs therefore state
+# the position explicitly rather than letting the profile decide.
+ONSCREEN_ARGS = ["--window-position=80,60", "--window-size=1280,900"]
 
 
 def _load_playwright():
@@ -171,19 +215,45 @@ class BrowserFetcher:
 
         # A persistent profile keeps the Cloudflare clearance cookie between
         # runs, which is the single biggest reduction in challenges.
-        self._context = self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(self.profile_dir),
-            channel="chrome",
-            headless=self.headless,
-            no_viewport=True,
-            args=OFFSCREEN_ARGS if (self.offscreen and not self.headless) else [],
-            proxy=self._proxy_settings(),
+        self._context = self._launch_context(
+            lambda: self._playwright.chromium.launch_persistent_context(
+                user_data_dir=str(self.profile_dir),
+                channel="chrome",
+                headless=self.headless,
+                no_viewport=True,
+                args=(
+                    OFFSCREEN_ARGS
+                    if (self.offscreen and not self.headless)
+                    else ([] if self.headless else ONSCREEN_ARGS)
+                ),
+                proxy=self._proxy_settings(),
+            )
         )
+        # Only the signed-in profile restores a session. Doing it for every
+        # profile would let a stray session.json turn anonymous runs into
+        # signed-in ones, which is exactly the isolation the two profiles buy.
+        if self.profile_dir == LOGIN_PROFILE_DIR:
+            self.restore_session()
+
         LOGGER.info(
             "Browser ready (patchright=%s, headless=%s, profile=%s)",
             self.is_patched, self.headless, self.profile_dir,
         )
         return self
+
+    def _launch_context(self, launch):
+        """Launch, turning a profile clash into an explanation."""
+        try:
+            return launch()
+        except Exception as e:
+            if "already in use" in str(e) or "existing browser session" in str(e):
+                raise RuntimeError(
+                    f"The browser profile is already open:\n  {self.profile_dir}\n"
+                    "Another run (or a --login window) still has it. Chrome allows "
+                    "one process per profile — wait for that run to finish, or "
+                    "close its window, then try again."
+                ) from e
+            raise
 
     def close(self):
         for closer, method in ((self._context, "close"), (self._playwright, "stop")):
@@ -208,7 +278,61 @@ class BrowserFetcher:
         "master_access_token", "oauth2_global_js_token", "user_uid", "company_uid",
     })
 
-    def is_signed_in(self) -> bool:
+    LOGIN_REDIRECT = "/ab/account-security/login"
+
+    def session_state(self) -> str:
+        """`live`, `signed_out`, `rate_limited` or `unknown`.
+
+        Cookies outlive the session they belong to — a profile kept its auth
+        cookies while Upwork redirected every request to the login page — so
+        this asks the server rather than the cookie jar.
+
+        Four outcomes rather than a boolean, because a network blip is not the
+        same as being signed out, and silently downgrading a signed-in run on
+        a timeout would hide the real problem.
+        """
+        if self._context is None:
+            return "unknown"
+
+        page = None
+        try:
+            # Inside the try: opening the page can fail too, and that is an
+            # unknown, not a verdict of signed-out.
+            page = self._context.new_page()
+            page.goto(
+                "https://www.upwork.com/nx/search/jobs/",
+                wait_until="domcontentloaded",
+                timeout=self.timeout_ms,
+            )
+            page.wait_for_timeout(1500)
+            html = page.content()
+
+            if any(m in _normalise(html) for m in RATE_LIMIT_MARKERS):
+                return "rate_limited"
+            if self.LOGIN_REDIRECT in page.url:
+                return "signed_out"
+
+            # The job search renders for anonymous visitors too, so "it loaded
+            # without redirecting" proves nothing. The sign-up nav is what
+            # actually distinguishes the two: it is only served to visitors.
+            if any(m in html for m in SIGNED_OUT_MARKERS):
+                return "signed_out"
+            return "live"
+        except Exception as e:
+            LOGGER.warning("Session check failed: %s", type(e).__name__)
+            return "unknown"
+        finally:
+            if page is not None:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+
+    def session_is_live(self) -> bool:
+        """Convenience wrapper — see `session_state` for the distinctions."""
+        return self.session_state() == "live"
+
+    def has_session_cookies(self) -> bool:
         """True when the profile holds an Upwork session.
 
         Read from the cookie jar rather than by loading a page, so it can be
@@ -223,15 +347,202 @@ class BrowserFetcher:
             return False
         return bool(names & self.SESSION_COOKIES)
 
+    # Where a rescued session is kept. Inside the profile directory, so it
+    # lives and dies with the profile it belongs to.
+    SESSION_FILE = "session.json"
+    SESSION_TTL_DAYS = 30
+
+    @property
+    def session_path(self) -> Path:
+        return self.profile_dir / self.SESSION_FILE
+
+    def save_session(self) -> int:
+        """Persist Upwork cookies so they outlive the browser process.
+
+        Signing in with Google (or without ticking "keep me logged in") yields
+        session-scoped cookies that Chrome drops on exit, even though the token
+        itself is still valid server-side. Saving them with an explicit expiry
+        turns a one-shot login into one that lasts.
+
+        The file holds live session tokens — treat it like a password. It sits
+        in the profile directory and is git-ignored.
+        """
+        if self._context is None:
+            return 0
+
+        cookies = [
+            c for c in self._context.cookies()
+            if "upwork.com" in (c.get("domain") or "")
+        ]
+        if not cookies:
+            return 0
+
+        expiry = time.time() + self.SESSION_TTL_DAYS * 86400
+        for cookie in cookies:
+            if (cookie.get("expires") or -1) <= 0:
+                cookie["expires"] = expiry
+
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
+        self.session_path.write_text(json.dumps(cookies), encoding="utf-8")
+        try:  # best effort; POSIX only
+            self.session_path.chmod(0o600)
+        except Exception:
+            pass
+
+        LOGGER.info("Saved %d session cookies to %s", len(cookies), self.session_path)
+        return len(cookies)
+
+    def restore_session(self) -> bool:
+        """Re-add saved cookies to a fresh context, if it needs them.
+
+        Skipped when the profile already carries a session: Upwork rotates
+        tokens as you use it, so replaying an older file over a live jar would
+        downgrade a working session to a stale one.
+        """
+        if self._context is None or not self.session_path.exists():
+            return False
+
+        try:
+            cookies = json.loads(self.session_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            LOGGER.warning("Saved session is unreadable (%s)", type(e).__name__)
+            return False
+
+        if not isinstance(cookies, list) or not cookies:
+            LOGGER.warning("Saved session is empty or malformed")
+            return False
+
+        # A file older than the expiry we wrote is certainly dead.
+        fresh = [c for c in cookies if (c.get("expires") or 0) > time.time()]
+        if not fresh:
+            LOGGER.warning("Saved session has expired — sign in again with --login")
+            return False
+
+        # Fill in what the profile is missing rather than replacing wholesale.
+        # Chrome persists some auth cookies and drops others, so an
+        # all-or-nothing rule fails both ways: replacing everything can
+        # clobber fresher values, and skipping when *any* cookie survives
+        # leaves the session broken — which is exactly what happened when
+        # only oauth2_global_js_token came back and the run reported
+        # signed_out with a perfectly good session file on disk.
+        try:
+            present = {
+                (c.get("name"), c.get("domain")) for c in self._context.cookies()
+            }
+        except Exception:
+            present = set()
+
+        missing = [c for c in fresh if (c.get("name"), c.get("domain")) not in present]
+        if not missing:
+            LOGGER.debug("Profile already holds every saved cookie")
+            return False
+
+        try:
+            self._context.add_cookies(missing)
+        except Exception as e:
+            LOGGER.warning("Could not restore the saved session: %s", type(e).__name__)
+            return False
+
+        LOGGER.info(
+            "Restored %d of %d saved cookies (%d already present)",
+            len(missing), len(fresh), len(fresh) - len(missing),
+        )
+        return True
+
+    def forget_session(self):
+        """Delete the saved session — the way to sign this profile out."""
+        try:
+            self.session_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def session_cookies_persist(self) -> bool:
+        """Whether the session survives closing the browser.
+
+        Upwork issues session-scoped cookies unless "Keep me logged in on this
+        device" is ticked. Those vanish when Chrome exits, so the next run
+        starts signed out — which looks exactly like an expired session and
+        sent this down the wrong path once already.
+        """
+        if self._context is None:
+            return False
+        try:
+            cookies = self._context.cookies()
+        except Exception:
+            return False
+
+        session_cookies = [
+            c for c in cookies if c.get("name") in self.SESSION_COOKIES
+        ]
+        if not session_cookies:
+            return False
+        # A cookie with no (or a past) expiry dies with the browser. Playwright
+        # reports -1 for session cookies.
+        return any((c.get("expires") or -1) > 0 for c in session_cookies)
+
     def wait_for_login(self, timeout_s: int = 300, poll_s: float = 3.0) -> bool:
-        """Block until the profile is signed in, or the timeout expires."""
+        """Block until the sign-in completes, or the timeout expires.
+
+        Cookies appearing is necessary but not sufficient — some arrive
+        part-way through an SSO redirect, before the account is actually
+        signed in — so the cookie poll only decides when it is worth asking
+        Upwork for a verdict.
+        """
         waited = 0.0
         while waited < timeout_s:
-            if self.is_signed_in():
+            if self.has_session_cookies() and self.session_state() == "live":
                 return True
             time.sleep(poll_s)
             waited += poll_s
-        return self.is_signed_in()
+        return self.has_session_cookies() and self.session_state() == "live"
+
+    # The signed-in app serves job details on this route, and hydrates them
+    # into window.__NUXT__ — where the numbers are richer than the card.
+    DETAILS_URL = "https://www.upwork.com/nx/search/jobs/details/{cipher}"
+
+    def fetch_client_state(self, cipher: str, settle_ms: int = 4000) -> dict | None:
+        """Client details from the signed-in app's own state object.
+
+        Returns None when the state is absent — signed out, blocked, or the
+        route changed — so the caller can fall back to scraping the HTML.
+        """
+        from upwork_scraper.enrich.nuxt_state import STATE_SCRIPT
+
+        if self._context is None:
+            raise RuntimeError("BrowserFetcher not started")
+
+        page = self._context.new_page()
+        try:
+            page.goto(
+                self.DETAILS_URL.format(cipher=cipher),
+                wait_until="domcontentloaded",
+                timeout=self.timeout_ms,
+            )
+            # The state is populated during hydration, so give it a moment —
+            # but read the object rather than waiting for the card to paint.
+            try:
+                page.wait_for_function(
+                    "() => window.__NUXT__ && window.__NUXT__.state "
+                    "&& window.__NUXT__.state.jobDetails",
+                    timeout=self.ready_timeout_ms,
+                )
+            except Exception:
+                page.wait_for_timeout(settle_ms)
+
+            state = page.evaluate(STATE_SCRIPT)
+            self.pages_fetched += 1
+            return state
+        except Exception as e:
+            LOGGER.warning("State read failed for %s: %s", cipher, type(e).__name__)
+            return None
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+    # Old name kept so existing callers keep working.
+    is_signed_in = has_session_cookies
 
     def open_page(self, url: str):
         """A page left open for the caller to drive — used by the login flow."""
@@ -258,7 +569,10 @@ class BrowserFetcher:
                 try:
                     page.wait_for_selector(selector, timeout=self.ready_timeout_ms)
                 except Exception:
-                    rendered = False
+                    # The selector targets the signed-out markup. A signed-in
+                    # page renders differently, so fall back to asking whether
+                    # the content is there at all.
+                    rendered = any(m in page.content() for m in RENDERED_MARKERS)
 
             # A brief, irregular read pause and a scroll — closer to real use
             # than loading and closing instantly.
@@ -296,9 +610,17 @@ class BrowserFetcher:
 
         for attempt in range(1, attempts + 1):
             status, html, rendered = self._load_once(url, ready_selector)
-            head = html[:6000].lower()
+            head = _normalise(html[:6000])
             challenged = any(m in head for m in CHALLENGE_MARKERS)
-            rate_limited = any(m in head for m in RATE_LIMIT_MARKERS)
+
+            # The soft-block text sits deep in the document — observed at byte
+            # 1,159,368 of a 1.2MB page — so the whole body has to be searched.
+            # Scanning everything alone would false-positive on healthy pages
+            # that merely ship the error string in a bundle, so it only counts
+            # when the page also failed to render any real content.
+            rate_limited = not rendered and any(
+                m in _normalise(html) for m in RATE_LIMIT_MARKERS
+            )
 
             if rendered and not challenged and not rate_limited:
                 self.pages_fetched += 1
