@@ -52,7 +52,7 @@ them.
 Sample output:
 
 ```
-[HOT    17]  @somebrand  (12,400 followers, 3h ago)
+[HOT    17]  @somebrand  (12,400 followers, 3h ago)   1,500 SGD/month
   https://x.com/somebrand/status/2087...
     Looking for a full-time video editor who excels at motion graphics.
     Pay: 1.5K SGD / month. What you'll edit: clipping long-form + talking head shorts
@@ -63,6 +63,12 @@ Sample output:
 `why:` is the list of rules that fired. If a lead looks wrong, that line says
 which rule to go and fix.
 
+The amount on the headline is pulled out of the post by
+`x_leads/leads/budget.py` — "$500 per 30-second reel", "1.5K SGD / month" and
+"budget is around 150" all reduce to one comparable string. It stays blank when
+the post never named a figure, which is most of them; money someone else earned
+("I made $10k last month") and giveaway bait are deliberately not counted.
+
 ### Verdicts
 
 | | meaning |
@@ -71,6 +77,28 @@ which rule to go and fix.
 | **warm** | a clear ask, less detail attached |
 | **cold** | probably an ask, thin on context — worth a skim |
 | rejected | seller, noise, or off-topic (hidden unless `--include-rejected`) |
+
+### The CSV
+
+`-f csv` writes these columns, in this order:
+
+```
+verdict, score, budget, tweet_url, handle, display_name, followers, posted_at,
+age_hours, text, bio, profile_url, professional_category, likes, replies,
+views, niche, signals, reject_reason
+```
+
+- **budget** — the figure the post named, normalised: `$500/video`,
+  `$800-$1,200/month`, `₹45,000/month`. Blank when unstated. Sort on it to work
+  the paying posts first.
+- **niche** — which preset found the lead, so two runs can be pasted into one
+  sheet without losing track of where a row came from.
+- **text** — the full post. Long posts are read from X's `note_tweet` field, so
+  nothing is cut off at 280 characters; newlines are flattened to spaces
+  because some spreadsheet importers split a row on them.
+
+`-f json` carries the same fields plus `website`, `verified` and
+`matched_queries`, which the CSV leaves out to stay readable.
 
 ---
 
@@ -240,6 +268,7 @@ x_leads/
 │   └── collector.py        browser driving, response capture, stop rules
 ├── leads/
 │   ├── patterns.py         the ask / the offer / noise regexes
+│   ├── budget.py           the stated figure -> "$500/video"
 │   └── classifier.py       weights, thresholds, hard rules
 └── niches/video_editing.json
 ```

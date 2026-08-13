@@ -15,9 +15,11 @@ from datetime import datetime, timezone
 from x_leads.models import Lead
 
 CSV_FIELDS = [
-    "verdict", "score", "tweet_url", "handle", "display_name", "followers",
-    "posted_at", "age_hours", "text", "bio", "profile_url",
-    "professional_category", "likes", "replies", "views", "signals",
+    # `budget` sits up front with the verdict: after "is this a lead?" the next
+    # question is always "is it worth answering first?".
+    "verdict", "score", "budget", "tweet_url", "handle", "display_name",
+    "followers", "posted_at", "age_hours", "text", "bio", "profile_url",
+    "professional_category", "likes", "replies", "views", "niche", "signals",
     "reject_reason",
 ]
 
@@ -92,6 +94,7 @@ def to_digest(leads: list[Lead], width: int = 100, show_signals: bool = True) ->
         out.append(
             f"[{_BADGE.get(lead.verdict, '----')} {lead.score:>3}]  "
             f"{author}  ({followers} followers, {_age(lead)} ago)"
+            + (f"   {lead.budget}" if lead.budget else "")
         )
         out.append(f"  {t.url}")
 

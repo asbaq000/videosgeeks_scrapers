@@ -115,7 +115,9 @@ class XLeadScraper:
         LOGGER.info("Collected %d unique tweets — classifying", len(tweets))
 
         classifier = LeadClassifier(
-            thresholds=cfg.thresholds, min_followers=cfg.min_followers
+            thresholds=cfg.thresholds,
+            min_followers=cfg.min_followers,
+            niche=niche.name,
         )
         leads = classifier.classify_all(tweets)
 

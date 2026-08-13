@@ -84,6 +84,12 @@ class Lead:
     # to a bare number.
     signals: list[str] = field(default_factory=list)
     reject_reason: str = ""
+    # The money the post named, already formatted for reading: "$500/video".
+    # Empty when the post never said — which is most of them.
+    budget: str = ""
+    # Which niche preset the run was searching. Constant within a run, but a
+    # CSV outlives the run that made it and gets pasted next to another one.
+    niche: str = ""
 
     @property
     def is_lead(self) -> bool:
@@ -94,6 +100,8 @@ class Lead:
         return {
             "verdict": self.verdict,
             "score": self.score,
+            "budget": self.budget,
+            "niche": self.niche,
             "signals": self.signals,
             "reject_reason": self.reject_reason,
             "tweet_url": t.url,

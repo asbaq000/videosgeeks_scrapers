@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from x_leads.leads import patterns as P
+from x_leads.leads.budget import extract_budget
 from x_leads.models import Lead, Tweet
 
 LOGGER = logging.getLogger(__name__)
@@ -119,22 +120,28 @@ class LeadClassifier:
         min_followers: int = 0,
         require_niche: bool = True,
         use_bio: bool = True,
+        niche: str = "",
     ):
         self.t = thresholds or Thresholds()
         self.min_followers = min_followers
         self.require_niche = require_niche
         self.use_bio = use_bio
+        # Stamped onto every lead so the output says which preset found it.
+        self.niche = niche
 
     def classify(self, tweet: Tweet) -> Lead:
         text = P.normalise(tweet.text)
-        lead = Lead(tweet=tweet)
+        # Both are set before the early returns: a rejected lead is read to
+        # audit the classifier, and "it dropped a post with $800 on it" is
+        # exactly the kind of mistake that review is for.
+        lead = Lead(tweet=tweet, niche=self.niche, budget=extract_budget(tweet.text))
 
         if not text:
             lead.reject_reason = "empty text"
             return lead
 
-        niche = _hits(text, P.NICHE_TERMS)
-        if self.require_niche and not niche:
+        niche_terms = _hits(text, P.NICHE_TERMS)
+        if self.require_niche and not niche_terms:
             lead.reject_reason = "not about video or social content"
             return lead
 
