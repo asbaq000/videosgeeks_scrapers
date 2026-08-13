@@ -1,0 +1,358 @@
+2026-08-13 11:28:44,837 - INFO - FRESH RUN: lead cap disabled for this run (config value on disk stays 20).
+2026-08-13 11:28:44,874 - INFO - FRESH RUN: seen_fb_urls.json set aside as seen_fb_urls.json.before_fresh_20260813_112844.bak
+2026-08-13 11:28:44,882 - INFO - FRESH RUN: seen_lead_signatures.json set aside as seen_lead_signatures.json.before_fresh_20260813_112844.bak
+2026-08-13 11:28:44,888 - INFO - FRESH RUN: daily_lead_quota.json set aside as daily_lead_quota.json.before_fresh_20260813_112844.bak
+2026-08-13 11:28:46,707 - INFO - FRESH RUN: cutoff 2026-08-11 11:28:46.707497 (last 2 days), 31 groups.
+2026-08-13 11:28:46,749 - INFO - [1/31] Visiting: I Need a Editor
+2026-08-13 11:28:51,729 - INFO - Current page detected: https://www.facebook.com/groups/ineedavideoeditor/?rdid=S02EWKABTJX8bvjz&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1YpD7y4noQ%2F#
+2026-08-13 11:28:57,755 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:28:59,335 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:06,128 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [no video-editing context keyword found]: https://www.facebook.com/groups/ineedavideoeditor/posts/2629382457515080 | text: 'Hi, I need a Thumbnail Designer.... For long term projects'
+2026-08-13 11:29:07,409 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:09,570 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:11,050 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:29:14,091 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:29:18,217 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:20,033 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:21,847 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:29:24,889 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:29:28,955 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:30,826 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:32,711 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:29:35,803 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:29:39,302 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:40,652 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:41,975 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:29:45,022 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:29:48,555 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:49,889 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:29:51,256 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:29:54,301 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:29:57,653 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:29:59,506 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:30:01,058 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:30:04,109 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:30:07,437 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:30:09,125 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:30:10,783 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:30:13,865 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:30:15,581 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:30:15,581 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:30:15,581 - INFO - [1/31] I Need a Editor -- qualifying 7 (running total 7), old 0, dup 0, cross-dup 0, not-qualifying 1
+2026-08-13 11:30:15,581 - INFO - [2/31] Visiting: VIDEO EDITORS for TIKTOK YOUTUBE & INSTAGRAM
+2026-08-13 11:30:20,949 - INFO - Current page detected: https://www.facebook.com/groups/1535727757545719/?rdid=Wb3VtidsmK4M8a19&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1SZ9Bs6Dn1%2F#
+2026-08-13 11:30:22,661 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:30:22,661 - WARNING - [2/31] No post content rendered; skipping: VIDEO EDITORS for TIKTOK YOUTUBE & INSTAGRAM
+2026-08-13 11:30:22,661 - INFO - [3/31] Visiting: Looking For Video Editor UK
+2026-08-13 11:30:27,578 - INFO - Current page detected: https://www.facebook.com/groups/470532055541674/?rdid=BBIM72pWISxWaHjJ&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1EN1BBuUB8%2F#
+2026-08-13 11:30:30,277 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/470532055541674/posts/1088985077029699 | text: 'video editor Graphic design needed urgently inbox me if you are interested'
+2026-08-13 11:30:30,754 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:30:35,860 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:30:38,186 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/470532055541674/posts/1089140620347478 | text: "Looking for a YouTube Video Editor for a New Global Travel Channel! I already travel a lot and share my journeys on Instagram, but now I want to document more extensively on YouTube. I'm launching a travel vlogging channel starting with short UK trips, expanding to European city breaks, and eventually scaling to all around the world. I'm looking for a reliable, long-term editor to grow with me. The Vibe: Raw, authentic, and natural not overly polished or over-produced. See more"
+2026-08-13 11:30:38,853 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:30:40,263 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:30:41,697 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:30:44,733 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:30:46,539 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'seller', not 'buyer']: https://www.facebook.com/groups/470532055541674/posts/1087561257172081 | text: 'Hello Everyone  I am a creative and adaptive Video Editor  who can make Map animations and also Talking Head Videos I can also make content Reels for Facebook or Instagram … See more'
+2026-08-13 11:30:47,360 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:30:49,201 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:30:50,958 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:30:53,995 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:30:54,375 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:30:54,375 - INFO - [3/31] Looking For Video Editor UK -- qualifying 0 (running total 7), old 0, dup 0, cross-dup 0, not-qualifying 3
+2026-08-13 11:30:54,375 - INFO - [4/31] Visiting: Professional Video Editors
+2026-08-13 11:30:59,446 - INFO - Current page detected: https://www.facebook.com/groups/310584494121197/?rdid=6h6jI9hwogR5zy4S&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F17sYQhzdR4%2F#
+2026-08-13 11:31:01,187 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:31:01,187 - WARNING - [4/31] No post content rendered; skipping: Professional Video Editors
+2026-08-13 11:31:01,187 - INFO - [5/31] Visiting: Freelance Video Editor Philippines Official
+2026-08-13 11:31:05,873 - INFO - Current page detected: https://www.facebook.com/groups/563297302882280/?rdid=ZYZtcMu4RgJZY2Pi&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1BiuKWizbZ%2F#
+2026-08-13 11:31:10,396 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:31:12,306 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:31:16,001 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:31:17,730 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:31:19,439 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:31:22,488 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:31:22,841 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:31:22,841 - INFO - [5/31] Freelance Video Editor Philippines Official -- qualifying 1 (running total 8), old 1, dup 0, cross-dup 0, not-qualifying 0
+2026-08-13 11:31:22,843 - INFO - [6/31] Visiting: Hire A VIDEO EDITOR WORLDWIDE Here
+2026-08-13 11:31:27,749 - INFO - Current page detected: https://www.facebook.com/groups/185647597308414/?rdid=CnGKcW8M2FVgHdfX&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F14fbrHUzmsZ%2F#
+2026-08-13 11:31:29,522 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:31:29,522 - WARNING - [6/31] No post content rendered; skipping: Hire A VIDEO EDITOR WORLDWIDE Here
+2026-08-13 11:31:29,522 - INFO - [7/31] Visiting: Video Editors of the Philippines
+2026-08-13 11:31:34,697 - INFO - Current page detected: https://www.facebook.com/groups/914755432934212/?rdid=pyCUmtISCftCWXc0&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1AhHHfAAdS%2F#
+2026-08-13 11:31:36,520 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:31:36,520 - WARNING - [7/31] No post content rendered; skipping: Video Editors of the Philippines
+2026-08-13 11:31:36,520 - INFO - [8/31] Visiting: PHILIPPINES - FOR PROFESSIONAL VIDEO EDITORS ONLY
+2026-08-13 11:31:41,640 - INFO - Current page detected: https://www.facebook.com/groups/philippinesforprofessionalvideoeditorsonly/?rdid=YA2B8qgPWE4jnQt8&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1Gq6caq1u8%2F#
+2026-08-13 11:31:43,362 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:31:43,362 - WARNING - [8/31] No post content rendered; skipping: PHILIPPINES - FOR PROFESSIONAL VIDEO EDITORS ONLY
+2026-08-13 11:31:43,362 - INFO - [9/31] Visiting: Pakistani Video Editors
+2026-08-13 11:31:48,130 - INFO - Current page detected: https://www.facebook.com/groups/497041285819747/?rdid=y9bMgh0cEuQVXJEl&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F17wWHArQg5%2F#
+2026-08-13 11:31:52,439 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:31:58,910 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/497041285819747/posts/1445748464282353 | text: 'Koi movie explained ka editor h is field me expert ho long or short dono ka'
+2026-08-13 11:31:59,926 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:01,935 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:03,570 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:06,616 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:08,091 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'seller', not 'buyer']: https://www.facebook.com/groups/497041285819747/posts/1445640554293144 | text: 'ISO LONG TERM REEL EDITOR I’m looking to add a reliable video editor for consistent short form reel editing. The workload will be approximately 15 to 20 reels per month. See more'
+2026-08-13 11:32:08,946 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:10,712 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:12,554 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:15,590 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:18,044 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:19,673 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:21,302 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:24,345 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:26,523 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:27,954 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:29,269 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:32,336 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:33,672 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/497041285819747/posts/1444873254369874 | text: 'Mujhe AI cartoon aur short AI videos banwane hain Agar koi ye service provide karta hai to please Inbox/DM kare. Paid work hai.'
+2026-08-13 11:32:34,417 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:36,209 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:37,997 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:41,037 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:43,025 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:44,504 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:45,849 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:48,895 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:50,688 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:32:52,352 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:32:54,102 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:32:57,159 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:32:58,457 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer'; no video-editing context keyword found]: https://www.facebook.com/groups/497041285819747/posts/1446725404184659 | text: '"سلام! میں اپنی ایجنسی ClipScale کے لیے ایک ایسا ویڈیو ایڈیٹر ڈھونڈ رہا ہوں جو پرسنٹیج (Percentage) کی بنیاد پر کام کرے۔ میں باہر سے کلائنٹ لاؤں گا، منافع کا 50% آپ کا ہوگا اور 50% میرا۔ جو انٹرسٹڈ ہے، اپنا پورٹ فولیو ان باکس کرے'
+2026-08-13 11:32:59,154 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:00,480 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:01,823 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:04,865 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:08,163 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:10,072 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:11,703 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:14,757 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:21,002 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:22,598 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:24,098 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:27,139 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:28,415 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [classified as onsite/in-person, not remote/freelance]: https://www.facebook.com/groups/497041285819747/posts/1446230684234131 | text: 'Any Video Editor From Bahawalpur? Office Based Job'
+2026-08-13 11:33:29,144 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:30,773 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:32,386 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:35,436 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:39,005 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:40,271 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:41,562 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:44,602 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:46,110 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'seller', not 'buyer'; classified as onsite/in-person, not remote/freelance]: https://www.facebook.com/groups/497041285819747/posts/1446463197544213 | text: 'One year experience in premium pro. Basic editing required only premium pro. No capcut on side job. Full-time job bonuses and incentives are separate. Good salary at Johar town lahore 03024644637 One year experience in premium pro. Basic editing required only premium pro. No capcut on side job. Full-time job bonuses and incentives are separate. Good salary at Johar town lahore'
+2026-08-13 11:33:47,338 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:48,975 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:50,288 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:33:53,337 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:33:55,327 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:33:56,986 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:33:58,757 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:34:01,873 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:34:03,226 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/497041285819747/posts/1446163564240843 | text: 'Building A Remote Video Editing Team Admin Approve please !!! I’d prefer to work with Pakistani editors, but if you’re based somewhere else and genuinely skilled at what you do, feel free to DM as well. **Please read the post carefully before messaging and DM me on the account mentioned in the post.** See more'
+2026-08-13 11:34:03,927 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:34:05,336 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:34:06,699 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:34:09,756 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:34:10,142 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:34:10,142 - INFO - [9/31] Pakistani Video Editors -- qualifying 5 (running total 13), old 5, dup 0, cross-dup 0, not-qualifying 7
+2026-08-13 11:34:10,142 - INFO - [10/31] Visiting: Video editors(Philippines)
+2026-08-13 11:34:14,858 - INFO - Current page detected: https://www.facebook.com/groups/1417223878967262/?rdid=bBQA2oI6CI6dVTVX&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1EZBXK2SzH%2F#
+2026-08-13 11:34:16,565 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:34:16,565 - WARNING - [10/31] No post content rendered; skipping: Video editors(Philippines)
+2026-08-13 11:34:16,565 - INFO - [11/31] Visiting: Video Editing Groups
+2026-08-13 11:34:21,209 - INFO - Current page detected: https://www.facebook.com/groups/294830932856749/
+2026-08-13 11:34:22,966 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:34:22,966 - WARNING - [11/31] No post content rendered; skipping: Video Editing Groups
+2026-08-13 11:34:22,966 - INFO - [12/31] Visiting: Hire a Video Editor - Freelance Hub
+2026-08-13 11:34:27,400 - INFO - Current page detected: https://www.facebook.com/groups/2045519552480506/
+2026-08-13 11:34:31,840 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:34:39,987 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:34:41,387 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:34:42,742 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:34:45,797 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:34:47,347 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/editverse.freelancehub/posts/2811647489201038 | text: 'Assalam O Alaikum Pakistan Sy Is Waqt Koi Editor Available Hy Jisy Voice Script Images Sb Mily Or Usy Bs Adjust Krna Ata Ho Daily 1,2 Videos Daily Payment Hy Long Term Work Come Only Whatsapp No Messenger Inbox Please Msg Fast 03185442458'
+2026-08-13 11:34:48,046 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:34:49,832 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:34:51,503 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:34:54,542 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:34:55,936 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/editverse.freelancehub/posts/2813936178972169 | text: 'VIDEO EDITOR WANTED — SCOPE CREEP I run Scope Creep, a video game essay channel (~3K subscribers and growing steadily). I write, record, and capture everything myself, and I’m looking for an editor to bring the finished VO and footage together. The Work See more'
+2026-08-13 11:34:56,596 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:35:00,339 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:35:01,919 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:35:03,462 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:35:06,501 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:35:09,831 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:35:11,169 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:35:12,488 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:35:15,520 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:35:18,699 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:35:20,369 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:35:21,866 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:35:24,911 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:35:26,618 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:35:26,618 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:35:26,618 - INFO - [12/31] Hire a Video Editor - Freelance Hub -- qualifying 4 (running total 17), old 0, dup 0, cross-dup 0, not-qualifying 2
+2026-08-13 11:35:26,618 - INFO - [13/31] Visiting: Video Editors Community
+2026-08-13 11:35:31,052 - INFO - Current page detected: https://www.facebook.com/groups/503066452462593/
+2026-08-13 11:35:33,665 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'seller', not 'buyer']: https://www.facebook.com/groups/503066452462593/posts/891530056949562 | text: 'Hi, I need a high-quality 60-second Fiverr gig promotional video for my Funnel Design service. STYLE & QUALITY Modern, premium, and clean Fast-paced with smooth transitions See more'
+2026-08-13 11:35:33,994 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:35:36,025 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:35:38,948 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:35:38,948 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:35:42,075 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:35:43,791 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:35:43,791 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:35:43,791 - INFO - [13/31] Video Editors Community -- qualifying 0 (running total 17), old 0, dup 0, cross-dup 0, not-qualifying 1
+2026-08-13 11:35:43,791 - INFO - [14/31] Visiting: Video Editing Services and Community Worldwide
+2026-08-13 11:35:47,202 - INFO - Current page detected: https://www.facebook.com/groups/610594114897677/
+2026-08-13 11:35:48,898 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:35:48,898 - WARNING - [14/31] No post content rendered; skipping: Video Editing Services and Community Worldwide
+2026-08-13 11:35:48,898 - INFO - [15/31] Visiting: YouTube Creators - Promote Your YouTube Channel
+2026-08-13 11:35:53,212 - INFO - Current page detected: https://www.facebook.com/groups/ytcreatorspromo/
+2026-08-13 11:35:54,924 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:35:54,924 - WARNING - [15/31] No post content rendered; skipping: YouTube Creators - Promote Your YouTube Channel
+2026-08-13 11:35:54,924 - INFO - [16/31] Visiting: Video Editor freelancer
+2026-08-13 11:35:59,227 - INFO - Current page detected: https://www.facebook.com/groups/396537685660594/
+2026-08-13 11:36:00,958 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:00,958 - WARNING - [16/31] No post content rendered; skipping: Video Editor freelancer
+2026-08-13 11:36:00,958 - INFO - [17/31] Visiting: EDITOR HUB
+2026-08-13 11:36:04,604 - INFO - Current page detected: https://www.facebook.com/groups/1380781919968166/
+2026-08-13 11:36:06,299 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:06,299 - WARNING - [17/31] No post content rendered; skipping: EDITOR HUB
+2026-08-13 11:36:06,299 - INFO - [18/31] Visiting: Video editing
+2026-08-13 11:36:10,693 - INFO - Current page detected: https://www.facebook.com/groups/409392954169013/
+2026-08-13 11:36:15,035 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:21,265 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:21,267 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:24,984 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:28,909 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:33,439 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:37,408 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:36:38,919 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:36:40,518 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:36:43,559 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:36:45,277 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:45,277 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:36:45,277 - INFO - [18/31] Video editing -- qualifying 1 (running total 18), old 0, dup 0, cross-dup 0, not-qualifying 0
+2026-08-13 11:36:45,277 - INFO - [19/31] Visiting: AI Video Editing Jobs & Services Online
+2026-08-13 11:36:49,708 - INFO - Current page detected: https://www.facebook.com/groups/1155257268851946/
+2026-08-13 11:36:51,485 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:51,485 - WARNING - [19/31] No post content rendered; skipping: AI Video Editing Jobs & Services Online
+2026-08-13 11:36:51,485 - INFO - [20/31] Visiting: Freelancer Video Editing
+2026-08-13 11:36:55,772 - INFO - Current page detected: https://www.facebook.com/groups/1326223411530920/
+2026-08-13 11:36:57,504 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:36:57,504 - WARNING - [20/31] No post content rendered; skipping: Freelancer Video Editing
+2026-08-13 11:36:57,504 - INFO - [21/31] Visiting: Freelance Video Editor Philippines
+2026-08-13 11:37:02,407 - INFO - Current page detected: https://www.facebook.com/groups/786509760938079/?rdid=LkEixZW0pdhcCSDf&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1b6kxk64Ny%2F#
+2026-08-13 11:37:06,749 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:13,194 - INFO - Skipping post (timestamp could not be reliably determined): https://www.facebook.com/groups/786509760938079/posts/1038411519081234
+2026-08-13 11:37:14,347 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:16,036 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:37:17,653 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:37:20,693 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:37:21,036 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:37:21,036 - INFO - [21/31] Freelance Video Editor Philippines -- qualifying 1 (running total 19), old 0, dup 0, cross-dup 0, not-qualifying 0
+2026-08-13 11:37:21,038 - INFO - [22/31] Visiting: Video Editors of the Philippines (2)
+2026-08-13 11:37:25,416 - INFO - Current page detected: https://www.facebook.com/groups/914755432934212/?rdid=cwnICQ8VEB6InBrD&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1D1Cud11Wk%2F#
+2026-08-13 11:37:29,649 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:30,971 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:37:35,648 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:38,371 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:37:38,371 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:37:41,095 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:37:41,096 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:37:44,141 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:37:45,842 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:37:45,842 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:37:45,842 - INFO - [22/31] Video Editors of the Philippines (2) -- qualifying 1 (running total 20), old 0, dup 0, cross-dup 0, not-qualifying 0
+2026-08-13 11:37:45,842 - INFO - [23/31] Visiting: Video editors(Philippines) (2)
+2026-08-13 11:37:50,322 - INFO - Current page detected: https://www.facebook.com/groups/1417223878967262/?rdid=iCN4RXj4aTRYx9yR&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1NsqCBmshn%2F#
+2026-08-13 11:37:52,944 - INFO - Skipping post (same lead already saved from another group): https://www.facebook.com/groups/1417223878967262/posts/1969969783692666
+2026-08-13 11:37:53,329 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:58,395 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:37:59,909 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:38:01,547 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:38:04,612 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:38:06,439 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:38:06,439 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:38:06,439 - INFO - [23/31] Video editors(Philippines) (2) -- qualifying 0 (running total 20), old 0, dup 0, cross-dup 1, not-qualifying 0
+2026-08-13 11:38:06,439 - INFO - [24/31] Visiting: Video Editing Jobs & video Editors (USA/UK/Canada)
+2026-08-13 11:38:11,016 - INFO - Current page detected: https://www.facebook.com/groups/147032671260514/?rdid=5VkuIbeQ4epfiOmG&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F17fWUHPZGW%2F#
+2026-08-13 11:38:12,730 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:38:12,730 - WARNING - [24/31] No post content rendered; skipping: Video Editing Jobs & video Editors (USA/UK/Canada)
+2026-08-13 11:38:12,730 - INFO - [25/31] Visiting: Video Editing Jobs & video Editors (worldwide)
+2026-08-13 11:38:17,348 - INFO - Current page detected: https://www.facebook.com/groups/6100423586635776/
+2026-08-13 11:38:19,080 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:38:19,080 - WARNING - [25/31] No post content rendered; skipping: Video Editing Jobs & video Editors (worldwide)
+2026-08-13 11:38:19,080 - INFO - [26/31] Visiting: Video Editing JOBS
+2026-08-13 11:38:23,355 - INFO - Current page detected: https://www.facebook.com/groups/510764166305355/
+2026-08-13 11:38:25,061 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:38:25,061 - WARNING - [26/31] No post content rendered; skipping: Video Editing JOBS
+2026-08-13 11:38:25,061 - INFO - [27/31] Visiting: Video Editing, Voice over, Whiteboard, 2D & 3D Jobs in Pakistan
+2026-08-13 11:38:28,941 - INFO - Current page detected: https://www.facebook.com/groups/1102047611258448/
+2026-08-13 11:38:30,710 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:38:30,710 - WARNING - [27/31] No post content rendered; skipping: Video Editing, Voice over, Whiteboard, 2D & 3D Jobs in Pakistan
+2026-08-13 11:38:30,710 - INFO - [28/31] Visiting: Video Editing
+2026-08-13 11:38:34,911 - INFO - Current page detected: https://www.facebook.com/groups/editingvideofilms/
+2026-08-13 11:38:37,740 - INFO - Skipping post (same lead already saved from another group): https://www.facebook.com/groups/editingvideofilms/posts/28023881120599326
+2026-08-13 11:38:38,143 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:38:41,182 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer']: https://www.facebook.com/groups/editingvideofilms/posts/28025870300400408 | text: "Video Editing classes will start soon It's free for 2 months Plus job confirmation yes to be Added"
+2026-08-13 11:38:44,595 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:38:46,139 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:38:47,667 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:38:50,712 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:38:53,687 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:38:55,221 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:38:56,907 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:38:59,959 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:39:00,270 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:39:00,270 - INFO - [28/31] Video Editing -- qualifying 1 (running total 21), old 0, dup 0, cross-dup 1, not-qualifying 1
+2026-08-13 11:39:00,270 - INFO - [29/31] Visiting: YouTube Video editing
+2026-08-13 11:39:03,804 - INFO - Current page detected: https://www.facebook.com/groups/302737219333992/
+2026-08-13 11:39:07,828 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:39:13,583 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:13,583 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:39:16,326 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:16,326 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:39:19,050 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:19,053 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:39:22,107 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:39:23,821 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:23,821 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:39:23,821 - INFO - [29/31] YouTube Video editing -- qualifying 1 (running total 22), old 0, dup 0, cross-dup 0, not-qualifying 0
+2026-08-13 11:39:23,821 - INFO - [30/31] Visiting: Video Editors Make Money Online
+2026-08-13 11:39:27,853 - INFO - Current page detected: https://www.facebook.com/groups/evokeverse/
+2026-08-13 11:39:29,572 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:29,572 - WARNING - [30/31] No post content rendered; skipping: Video Editors Make Money Online
+2026-08-13 11:39:29,572 - INFO - [31/31] Visiting: Video Editing Jobs (India)
+2026-08-13 11:39:33,841 - INFO - Current page detected: https://www.facebook.com/groups/1080596700055075/
+2026-08-13 11:39:36,351 - INFO - Skipping post (not a clear remote/freelance video-editing lead) [intent classified as 'unknown', not 'buyer'; no video-editing context keyword found]: https://www.facebook.com/groups/1080596700055075/posts/1772913580823380 | text: 'I need a flex design not chatgpt'
+2026-08-13 11:39:36,651 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:39:41,089 - INFO - Ran out of loaded posts; scrolling for more (attempt 1/3).
+2026-08-13 11:39:42,728 - INFO - Ran out of loaded posts; scrolling for more (attempt 2/3).
+2026-08-13 11:39:44,214 - INFO - Ran out of loaded posts; scrolling for more (attempt 3/3).
+2026-08-13 11:39:47,262 - INFO - Finished scrolling (3 rounds) to load additional posts.
+2026-08-13 11:39:48,977 - WARNING - No post content rendered after 1.6s of waiting (only loading skeletons or empty containers were present) -- Facebook may be loading slowly or this feed may be empty.
+2026-08-13 11:39:48,977 - INFO - No further unprocessed posts available after 3 scroll attempts; treating this group as fully scanned.
+2026-08-13 11:39:48,977 - INFO - [31/31] Video Editing Jobs (India) -- qualifying 0 (running total 22), old 0, dup 0, cross-dup 0, not-qualifying 1
+2026-08-13 11:39:53,456 - ERROR - Google Sheets write failed: ('invalid_grant: Invalid grant: account not found', {'error': 'invalid_grant', 'error_description': 'Invalid grant: account not found'})
+
+=== FRESH RUN RESULT ===
+groups configured   : 31
+groups scanned      : 13
+groups inaccessible : 18
+groups errored      : 0
+posts evaluated     : 33
+QUALIFYING LEADS    : 22
+duplicate URLs       : 0
+cross-group dups     : 2
+old posts skipped    : 6
+not qualifying       : 16
+invalid/no permalink : 16
+timestamp unreadable : 1
+leads -> Google Sheet: 0 (FAILED: ('invalid_grant: Invalid grant: account not found', {'error': 'invalid_grant', 'error_description': 'Invalid grant: account not found'}))
+CSV                 : LEADS_FRESH_20260813_112844.csv
+=== DONE ===
