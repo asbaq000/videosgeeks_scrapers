@@ -554,6 +554,47 @@ class TestMergedClientOutput:
 
         assert list(rows[0].keys()) == CSV_FIELDS
 
+    def test_csv_exports_every_client_field(self):
+        """CSV must not quietly export less than JSON.
+
+        An earlier CLIENT_CSV_FIELDS listed 14 of the 29 client fields and
+        dropped the rest in silence — including hire_rate, rating,
+        total_reviews and payment_verified, which are the whole reason the
+        enrichment stage (and signing in) exists. Anyone who exported CSV
+        instead of JSON lost exactly the columns they qualify a client on.
+        """
+        from upwork_scraper.cli import CLIENT_CSV_FIELDS
+        from upwork_scraper.models.client_models import ClientInfo
+
+        exported = set(CLIENT_CSV_FIELDS)
+        available = set(ClientInfo.model_fields) | set(
+            ClientInfo.model_computed_fields
+        )
+        # `cipher` is the join key and already on the job row.
+        missing = available - exported - {"cipher"}
+
+        assert not missing, (
+            f"client fields present in JSON but absent from CSV: "
+            f"{sorted(missing)}. Add them to CLIENT_CSV_FIELDS."
+        )
+
+    def test_csv_client_columns_all_resolve(self):
+        """Every declared column must name a real field, not a typo."""
+        from upwork_scraper.cli import CLIENT_CSV_FIELDS
+        from upwork_scraper.models.client_models import ClientInfo
+
+        known = set(ClientInfo.model_fields) | set(ClientInfo.model_computed_fields)
+        unknown = [f for f in CLIENT_CSV_FIELDS if f not in known]
+
+        assert not unknown, f"CLIENT_CSV_FIELDS names fields that do not exist: {unknown}"
+
+    def test_csv_exposes_the_signed_in_only_fields(self):
+        rows = list(csv.DictReader(io.StringIO(render(self._enriched_jobs(), "csv"))))
+
+        for column in ("client_hire_rate", "client_rating", "client_total_reviews",
+                       "client_payment_verified", "client_avg_spend_per_hire"):
+            assert column in rows[0], f"{column} missing from the CSV export"
+
     def test_enrichment_attaches_by_cipher(self, tmp_path):
         from upwork_scraper.models.client_models import ClientInfo
 

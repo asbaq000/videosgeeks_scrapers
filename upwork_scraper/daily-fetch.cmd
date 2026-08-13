@@ -4,11 +4,11 @@ REM
 REM   daily-fetch.cmd        -> 8 jobs (default)
 REM   daily-fetch.cmd 15     -> 15 jobs
 REM
-REM Output:  data\jobs-YYYY-MM-DD.json
+REM Output:  data\jobs-YYYY-MM-DD.csv
 REM Log:     logs\daily-YYYY-MM-DD.log
 REM
 REM Paced at 2-3.5 minutes between client lookups, so 8 jobs takes ~20 minutes.
-REM That slowness is deliberate — it keeps the footprint small.
+REM That slowness is deliberate - it keeps the footprint small.
 
 setlocal
 cd /d "%~dp0"
@@ -21,7 +21,7 @@ for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') d
 if not exist data mkdir data
 if not exist logs mkdir logs
 
-echo Fetching %COUNT% jobs into data\jobs-%TODAY%.json
+echo Fetching %COUNT% jobs into data\jobs-%TODAY%.csv
 echo Progress is written to logs\daily-%TODAY%.log
 
 .venv\Scripts\python.exe -m upwork_scraper ^
@@ -31,13 +31,13 @@ echo Progress is written to logs\daily-%TODAY%.log
   --limit %COUNT% ^
   --enrich-clients ^
   --enrich-delay 120 210 ^
-  --format json ^
-  --out "data\jobs-%TODAY%.json" >> "logs\daily-%TODAY%.log" 2>&1
+  --format csv ^
+  --out "data\jobs-%TODAY%.csv" >> "logs\daily-%TODAY%.log" 2>&1
 
 if errorlevel 1 (
   echo FAILED - see logs\daily-%TODAY%.log
   exit /b 1
 )
 
-echo Done: data\jobs-%TODAY%.json
+echo Done: data\jobs-%TODAY%.csv
 exit /b 0

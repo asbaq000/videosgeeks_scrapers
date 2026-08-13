@@ -55,10 +55,33 @@ CSV_FIELDS = [
 
 
 # Client fields worth a spreadsheet column, flattened as client_*.
+#
+# Ordered the way you read a client card: who they are, whether they can be
+# trusted, what they have actually spent, then what this specific job is doing.
+#
+# An earlier version listed 14 of the 29 fields and silently dropped the rest,
+# including `hire_rate`, `rating`, `total_reviews` and `payment_verified` —
+# the ones enrichment (and signing in) exists to obtain. Anyone exporting CSV
+# instead of JSON lost exactly the columns they would qualify a client on, with
+# nothing to indicate it. Keep this in step with `ClientInfo`; the test asserts
+# every field is accounted for.
 CLIENT_CSV_FIELDS = [
-    "country", "city", "member_since", "total_spent", "total_hires",
-    "active_hires", "industry", "company_size", "proposals", "last_viewed",
-    "interviewing", "invites_sent", "job_location", "fetch_status",
+    # who and where
+    "country", "city", "timezone", "local_time", "member_since",
+    "industry", "company_size",
+    # can they be trusted
+    "payment_verified", "is_top_client", "rating", "total_reviews",
+    # do they actually hire
+    "hire_rate", "total_posted_jobs", "open_jobs", "total_hires",
+    "total_jobs_with_hires", "active_hires", "has_ever_hired",
+    "hires_per_job", "active_hire_share",
+    # what they pay
+    "total_spent", "avg_spend_per_hire", "avg_hourly_rate_paid", "total_hours",
+    # this job's activity
+    "proposals", "interviewing", "invites_sent", "unanswered_invites",
+    "last_viewed", "job_location",
+    # did the lookup work
+    "fetch_status", "fetch_error",
 ]
 
 

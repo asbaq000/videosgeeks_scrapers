@@ -1,13 +1,33 @@
-important ones 
-fetch 10 latest to 2 days old jobs with full data but without hire rate
+# Upwork scraper - commands
 
-python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 10 --enrich-clients --out jobs.json
+## The two important ones (CSV)
 
-fetch 10 latest to 2 days old jobs with full data with hire rate (full data)
+Add `--format csv` and name the file `.csv`. Everything the JSON holds is in
+the CSV too - 14 job columns, plus 32 `client_*` columns once `--enrich-clients`
+has run.
+
+**1. Ten jobs, up to 2 days old, full client data (no hire rate)**
+
+```
+python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 10 --enrich-clients --format csv --out jobs.csv
+```
+
+**2. Same, with hire rate (signed in)**
+
+```
 python -m upwork_scraper --reset-login
 python -m upwork_scraper --login
-python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 3 --enrich-clients --logged-in --out jobs.json
+python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 5 --enrich-clients --logged-in --format csv --out jobs.csv
+```
 
+Keep `--limit 3` on the signed-in run. A signed-in session gets soft-blocked
+after roughly a dozen job-page loads, and the block is account-scoped, so a
+bigger limit costs you the account's access rather than getting you more rows.
+
+`--reset-login` is only needed when the profile is already rate limited or you
+are switching accounts; a working session can go straight to run 2.
+
+Want JSON instead? Drop `--format csv` and use `--out jobs.json`.
 
 The Standard Run
 
