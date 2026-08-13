@@ -280,19 +280,39 @@ class BrowserFetcher:
 
     LOGIN_REDIRECT = "/ab/account-security/login"
 
+    # Proof that the page painted, without needing to know what signed-in
+    # markup looks like: Upwork hooks its components with data-qa/data-test
+    # attributes everywhere. A healthy search page carries ~950 of them; a
+    # blank shell carries none.
+    HYDRATED = "() => document.querySelectorAll('[data-qa],[data-test]').length >= 5"
+
     def session_state(self) -> str:
         """`live`, `signed_out`, `rate_limited` or `unknown`.
 
         Cookies outlive the session they belong to — a profile kept its auth
-        cookies while Upwork redirected every request to the login page — so
-        this asks the server rather than the cookie jar.
+        cookies while Upwork redirected every request to the login page — so a
+        cookie check alone cannot promote a profile to `live`; that part asks
+        the server. Their *absence*, though, is decisive on its own, and free.
 
         Four outcomes rather than a boolean, because a network blip is not the
         same as being signed out, and silently downgrading a signed-in run on
         a timeout would hide the real problem.
+
+        `live` is never the fallback. It is returned only on positive evidence:
+        session cookies present, the page actually rendered, and no visitor
+        markup on it. An earlier version returned `live` whenever it failed to
+        recognise the page, so a slow first paint on a fresh profile — which
+        carries no visitor nav *because it carries nothing yet* — read as a
+        signed-in session, and the run went on to produce empty hire rates.
         """
         if self._context is None:
             return "unknown"
+
+        # A profile holding none of Upwork's session cookies cannot be signed
+        # in, whatever a page render suggests. This is the freshly-reset case,
+        # answered in microseconds and immune to page timing.
+        if not self.has_session_cookies():
+            return "signed_out"
 
         page = None
         try:
@@ -304,10 +324,22 @@ class BrowserFetcher:
                 wait_until="domcontentloaded",
                 timeout=self.timeout_ms,
             )
-            page.wait_for_timeout(1500)
-            html = page.content()
 
-            if any(m in _normalise(html) for m in RATE_LIMIT_MARKERS):
+            # Wait for the render rather than sleeping a fixed 1.5s and hoping.
+            # Warm, the markers are there at domcontentloaded; cold, they are
+            # not, and that difference used to decide the verdict.
+            hydrated = True
+            try:
+                page.wait_for_function(
+                    self.HYDRATED, timeout=min(self.ready_timeout_ms, 10_000)
+                )
+            except Exception:
+                hydrated = False
+
+            html = page.content()
+            low = _normalise(html)
+
+            if any(m in low for m in RATE_LIMIT_MARKERS):
                 return "rate_limited"
             if self.LOGIN_REDIRECT in page.url:
                 return "signed_out"
@@ -317,7 +349,10 @@ class BrowserFetcher:
             # actually distinguishes the two: it is only served to visitors.
             if any(m in html for m in SIGNED_OUT_MARKERS):
                 return "signed_out"
-            return "live"
+            if any(m in low[:6000] for m in CHALLENGE_MARKERS):
+                return "unknown"
+
+            return "live" if hydrated else "unknown"
         except Exception as e:
             LOGGER.warning("Session check failed: %s", type(e).__name__)
             return "unknown"

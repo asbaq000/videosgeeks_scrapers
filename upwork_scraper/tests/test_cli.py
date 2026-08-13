@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1014,3 +1015,180 @@ class TestAutoLogin:
         build_enricher(build_parser().parse_args(["--enrich-clients"]), MagicMock())
 
         assert mock_ensure.call_count == 0
+
+
+class TestSessionPrompt:
+    """With someone at the keyboard, a dead session is their call to make.
+
+    `--reset-login` then `--logged-in` silently produced an anonymous run: the
+    file looked complete and every hire-rate cell was empty. Asking is the
+    point — the flag is only ever passed when hire rate is what the run is for.
+    """
+
+    def _args(self, extra=()):
+        return build_parser().parse_args(["--enrich-clients", "--logged-in", *extra])
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_choosing_reset_wipes_the_profile_then_signs_in(
+        self, mock_probe, mock_reset, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+        with patch("upwork_scraper.cli.ask_about_session", return_value="reset"):
+            assert ensure_signed_in(self._args()) is True
+
+        assert mock_reset.call_count == 1
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_choosing_sign_in_keeps_the_profile(
+        self, mock_probe, mock_reset, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+        with patch("upwork_scraper.cli.ask_about_session", return_value="login"):
+            assert ensure_signed_in(self._args()) is True
+
+        assert mock_reset.call_count == 0
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_choosing_anonymous_runs_without_signing_in(
+        self, _probe, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session", return_value="anonymous"):
+            assert ensure_signed_in(self._args()) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_choosing_stop_aborts_the_run(self, _probe, mock_login, _ask):
+        from upwork_scraper.cli import RunAborted, ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session", return_value="stop"):
+            with pytest.raises(RunAborted):
+                ensure_signed_in(self._args())
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.probe_session_state", return_value="unknown")
+    def test_an_unconfirmed_session_asks_too(self, _probe, _ask):
+        """'Could not confirm' is exactly the state that burned this before."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session") as mock_ask:
+            mock_ask.return_value = "anonymous"
+            ensure_signed_in(self._args())
+
+        assert mock_ask.call_args.args[0] == "unknown"
+
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_watch_mode_never_asks(self, _probe):
+        """An unattended loop must not stop on a question nobody will read."""
+        from upwork_scraper.cli import can_ask
+
+        assert can_ask(self._args(["--watch"])) is False
+        assert can_ask(self._args(["--no-auto-login"])) is False
+
+    def test_a_redirected_stdin_is_not_a_keyboard(self):
+        from upwork_scraper.cli import can_ask
+
+        with patch("sys.stdin") as stdin:
+            stdin.isatty.return_value = False
+            assert can_ask(self._args()) is False
+            stdin.isatty.return_value = True
+            assert can_ask(self._args()) is True
+
+    def test_the_default_answer_depends_on_the_diagnosis(self, monkeypatch, capsys):
+        """Signing in on top of a flagged profile just reproduces the block."""
+        from upwork_scraper.cli import ask_about_session
+
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        assert ask_about_session("signed_out") == "login"
+        assert ask_about_session("rate_limited") == "reset"
+
+    def test_an_unreadable_answer_does_not_pick_anonymous(self, monkeypatch):
+        from upwork_scraper.cli import ask_about_session
+
+        monkeypatch.setattr("builtins.input", lambda _: "yes please")
+        assert ask_about_session("signed_out") == "login"
+
+    def test_ctrl_c_at_the_prompt_stops(self, monkeypatch):
+        from upwork_scraper.cli import ask_about_session
+
+        def interrupt(_):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", interrupt)
+        assert ask_about_session("signed_out") == "stop"
+
+    def test_every_option_is_reachable_by_number(self, monkeypatch):
+        from upwork_scraper.cli import SESSION_OPTIONS, ask_about_session
+
+        for i, (key, _) in enumerate(SESSION_OPTIONS, 1):
+            monkeypatch.setattr("builtins.input", lambda _, n=i: str(n))
+            assert ask_about_session("signed_out") == key
+
+
+class TestAbortedRun:
+    @patch("upwork_scraper.cli.build_enricher")
+    def test_main_reports_the_abort_and_scrapes_nothing(self, mock_build, capsys):
+        from upwork_scraper.cli import RunAborted, main
+
+        mock_build.side_effect = RunAborted("Stopped before scraping.")
+
+        assert main(["--enrich-clients", "--logged-in"]) == 3
+        assert "Stopped before scraping." in capsys.readouterr().err
+
+
+class TestEnrichmentDeliveredWhatItPromised:
+    """A signed-in run that produced no hire rate did not do its job."""
+
+    def _args(self):
+        args = build_parser().parse_args(["--enrich-clients", "--logged-in"])
+        args.logged_in_active = True
+        return args
+
+    def _result(self, cipher, hire_rate):
+        from upwork_scraper.models.client_models import ClientInfo
+
+        return ClientInfo(cipher=cipher, hire_rate=hire_rate, fetch_status="ok")
+
+    def test_warns_when_every_hire_rate_is_empty(self, caplog):
+        from upwork_scraper.cli import run_enrichment
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [self._result("a", None)]
+        jobs = [MagicMock(cipher="a")]
+
+        with caplog.at_level(logging.WARNING):
+            run_enrichment(enricher, jobs, self._args())
+
+        assert "not one client came back with a hire rate" in caplog.text
+
+    def test_silent_when_the_session_delivered(self, caplog):
+        from upwork_scraper.cli import run_enrichment
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [
+            self._result("a", None), self._result("b", 89),
+        ]
+        jobs = [MagicMock(cipher="a"), MagicMock(cipher="b")]
+
+        with caplog.at_level(logging.WARNING):
+            run_enrichment(enricher, jobs, self._args())
+
+        assert "not one client came back" not in caplog.text

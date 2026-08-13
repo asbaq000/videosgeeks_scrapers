@@ -142,6 +142,19 @@ jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
   block, 503 loaded-but-never-rendered. They were all reported as "Cloudflare —
   a real browser is required", which sent diagnosis down the wrong path. A 429
   trips the breaker immediately; retrying a soft block extends it.
+- **`live` is never a fallback verdict, and `--logged-in` never downgrades
+  silently**: `session_state()` used to return `live` whenever it failed to
+  recognise the page, so a freshly reset profile — no visitor nav yet because
+  nothing had rendered yet — passed as signed in, and the run enriched
+  anonymously into a CSV with an empty hire-rate column. Now: absent session
+  cookies settle it as `signed_out` with no page load at all; `live` requires
+  cookies *plus* a rendered page *plus* no visitor markup; an unrendered page
+  or a challenge is `unknown`. On top of that, an interactive `--logged-in` run
+  that cannot deliver hire rate asks what to do (sign in / reset then sign in /
+  anonymous / stop) instead of choosing for the user, and a signed-in run that
+  produced no hire rate at all says so after enrichment. Unattended runs
+  (`--watch`, `--no-auto-login`, non-tty stdin) keep the old auto behaviour —
+  there is nobody to ask.
 - **Anonymously, hire rate is impossible, and the payload proves it**: the page's Nuxt state
   blob carries the denominator's field (`postedCount`) and Upwork ships it as
   null to visitors — every sibling stat is populated, that one and `openCount`
@@ -171,7 +184,7 @@ jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
 ## Testing
 
 ```bash
-python -m pytest tests -q     # 189 tests, fully mocked, no network
+python -m pytest tests -q     # 360 tests, fully mocked, no network
 ```
 
 `tests/test_job_models.py`, `test_token_manager.py` and `test_proxy_manager.py`

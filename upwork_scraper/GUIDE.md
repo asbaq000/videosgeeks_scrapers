@@ -244,6 +244,41 @@ deliberate batches on jobs you already shortlisted:
 If you see `rate_limited` in the output, stop for a few hours. Retrying deepens
 it, so the run halts itself on the first occurrence rather than grinding on.
 
+### `--logged-in` never downgrades behind your back
+
+The whole point of the flag is hire rate, so a run that cannot deliver it asks
+rather than quietly producing a file with an empty column:
+
+```
+--logged-in was asked for, but this profile is not signed in.
+Hire rate and jobs-posted come only from a signed-in session; every
+other client field works either way.
+
+  [1] Sign in now — a browser window opens  <- default
+  [2] Reset this profile, then sign in (use if signing in keeps failing)
+  [3] Carry on without hire rate or jobs-posted
+  [4] Stop, change nothing
+```
+
+`[2]` is the default when the profile is rate limited, because signing in on
+top of a flagged profile just reproduces the block. `[4]` exits 3 before any
+scraping happens.
+
+Unattended runs are never asked — `--watch`, `--no-auto-login`, and anything
+whose stdin is not a terminal (a scheduled task, a pipe) keep the old
+behaviour: sign in automatically where allowed, otherwise log the reason and
+continue anonymously.
+
+Two things back that up, because a session check can only ever predict:
+
+- A profile holding no Upwork session cookies is signed out, decided without
+  loading a page. `--reset-login` followed immediately by `--logged-in` used to
+  report a live session and enrich anonymously — the reset profile has no
+  visitor nav to detect *because it has nothing yet*, and that absence was
+  being read as proof of a session.
+- After enrichment, a signed-in run where not one client returned a hire rate
+  says so, and points at `--login-status`.
+
 What the payload *does* give, none of which the card displays:
 
 | Field | Example |

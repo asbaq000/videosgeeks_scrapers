@@ -421,6 +421,10 @@ class TestSessionRescue:
 class TestSessionAudit:
     """Defects found auditing the login flow."""
 
+    # A session check only reaches the page when the profile holds session
+    # cookies, so anything testing the page logic has to carry one.
+    SIGNED_IN_COOKIES = [{"name": "master_access_token", "domain": ".upwork.com"}]
+
     def _fetcher(self, tmp_path, cookies=None):
         from upwork_scraper.enrich import BrowserFetcher
 
@@ -505,7 +509,7 @@ class TestSessionAudit:
         assert f.restore_session() is False
 
     def test_session_state_tells_the_modes_apart(self, tmp_path):
-        f = self._fetcher(tmp_path)
+        f = self._fetcher(tmp_path, self.SIGNED_IN_COOKIES)
         page = MagicMock()
         f._context.new_page.return_value = page
 
@@ -521,11 +525,54 @@ class TestSessionAudit:
         assert f.session_state() == "rate_limited"
 
     def test_a_timeout_is_unknown_not_signed_out(self, tmp_path):
-        f = self._fetcher(tmp_path)
+        f = self._fetcher(tmp_path, self.SIGNED_IN_COOKIES)
         f._context.new_page.side_effect = RuntimeError("Timeout")
 
         assert f.session_state() == "unknown"
         assert f.session_is_live() is False
+
+    def test_a_profile_without_session_cookies_is_signed_out(self, tmp_path):
+        """The freshly-reset case: decided without loading anything.
+
+        `--reset-login` immediately followed by `--logged-in` reported a live
+        session and produced a file with an empty hire-rate column. Cookies are
+        a necessary condition, so their absence settles it — no page load, and
+        nothing for a slow first paint to get wrong.
+        """
+        f = self._fetcher(tmp_path, [])
+
+        assert f.session_state() == "signed_out"
+        assert f._context.new_page.call_count == 0
+
+    def test_visitor_only_cookies_do_not_count(self, tmp_path):
+        """Anonymous visitors get a visitor_id too — it proves nothing."""
+        f = self._fetcher(tmp_path, [{"name": "visitor_id", "domain": ".upwork.com"}])
+
+        assert f.session_state() == "signed_out"
+
+    def test_a_page_that_never_rendered_is_unknown_not_live(self, tmp_path):
+        """An empty shell carries no visitor nav either.
+
+        Reading that absence as proof of a session is what let a signed-out run
+        through, so an unrendered page is now an unknown.
+        """
+        f = self._fetcher(tmp_path, self.SIGNED_IN_COOKIES)
+        page = MagicMock()
+        page.url = "https://www.upwork.com/nx/search/jobs/"
+        page.content.return_value = "<html><body></body></html>"
+        page.wait_for_function.side_effect = RuntimeError("Timeout 10000ms exceeded")
+        f._context.new_page.return_value = page
+
+        assert f.session_state() == "unknown"
+
+    def test_a_cloudflare_challenge_is_unknown(self, tmp_path):
+        f = self._fetcher(tmp_path, self.SIGNED_IN_COOKIES)
+        page = MagicMock()
+        page.url = "https://www.upwork.com/nx/search/jobs/"
+        page.content.return_value = "<html><title>Just a moment...</title></html>"
+        f._context.new_page.return_value = page
+
+        assert f.session_state() == "unknown"
 
 class TestSignedInDetection:
     """The job search loads for anonymous visitors, so a clean load proves nothing."""
@@ -535,6 +582,11 @@ class TestSignedInDetection:
 
         f = BrowserFetcher()
         f._context = MagicMock()
+        # Session cookies present throughout: what is under test here is what
+        # the *page* says, and the check never gets that far without them.
+        f._context.cookies.return_value = [
+            {"name": "master_access_token", "domain": ".upwork.com"}
+        ]
         page = MagicMock()
         page.url = url
         page.content.return_value = html
@@ -592,6 +644,9 @@ class TestVisitorNavMarker:
 
         f = BrowserFetcher()
         f._context = MagicMock()
+        f._context.cookies.return_value = [
+            {"name": "master_access_token", "domain": ".upwork.com"}
+        ]
         page = MagicMock()
         page.url = "https://www.upwork.com/nx/search/jobs/"
         page.content.return_value = html

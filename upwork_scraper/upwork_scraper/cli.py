@@ -204,14 +204,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--no-auto-login", action="store_true",
-        help="with --logged-in, do not open a sign-in window when the session "
-             "is dead; fall back to anonymous instead. Implied by --watch.",
+        help="with --logged-in, never ask and never open a sign-in window when "
+             "the session is dead; fall back to anonymous instead. Implied by "
+             "--watch.",
     )
     parser.add_argument(
         "--logged-in", action="store_true",
         help="enrich using the signed-in browser profile, which adds client "
              "hire rate and jobs-posted. Off by default: runs are anonymous "
-             "unless you ask for this. Set up once with --login.",
+             "unless you ask for this. Set up once with --login. If the session "
+             "is dead you are asked whether to sign in, reset and sign in, or "
+             "run anonymously — it never downgrades silently.",
     )
     parser.add_argument(
         "--no-filter", action="store_true",
@@ -552,41 +555,133 @@ def probe_session_state(args) -> str:
         fetcher.close()
 
 
+class RunAborted(Exception):
+    """The user chose to stop rather than run without what they asked for."""
+
+
+STATE_EXPLANATION = {
+    "signed_out": "this profile is not signed in",
+    "rate_limited": "Upwork is rate limiting this profile",
+    "unknown": "the session could not be confirmed",
+}
+
+SESSION_OPTIONS = (
+    ("login", "Sign in now — a browser window opens"),
+    ("reset", "Reset this profile, then sign in (use if signing in keeps failing)"),
+    ("anonymous", "Carry on without hire rate or jobs-posted"),
+    ("stop", "Stop, change nothing"),
+)
+
+
+def can_ask(args) -> bool:
+    """Whether there is a person at the keyboard to answer a question.
+
+    Watch mode and --no-auto-login are explicit instructions not to block on
+    one, so they never prompt however the run was started.
+    """
+    if args.no_auto_login or args.watch:
+        return False
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def ask_about_session(state: str) -> str:
+    """Ask what to do about a session that will not deliver hire rate.
+
+    Printed to stderr, because stdout is the data stream.
+    """
+    # Signing in on top of a flagged profile just reproduces the block, so the
+    # offered default changes with the diagnosis.
+    default = "reset" if state == "rate_limited" else "login"
+    keys = [key for key, _ in SESSION_OPTIONS]
+
+    print(
+        f"\n--logged-in was asked for, but {STATE_EXPLANATION.get(state, state)}.\n"
+        "Hire rate and jobs-posted come only from a signed-in session; every\n"
+        "other client field works either way.\n",
+        file=sys.stderr,
+    )
+    for i, (key, label) in enumerate(SESSION_OPTIONS, 1):
+        mark = "  <- default" if key == default else ""
+        print(f"  [{i}] {label}{mark}", file=sys.stderr)
+
+    try:
+        answer = input(f"\nChoose 1-{len(keys)} [{keys.index(default) + 1}]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        return "stop"
+
+    if not answer:
+        return default
+    if answer.isdigit() and 1 <= int(answer) <= len(keys):
+        return keys[int(answer) - 1]
+    # An unreadable answer must not silently pick the outcome they were being
+    # warned about.
+    print(f"Not one of the options — taking [{keys.index(default) + 1}].", file=sys.stderr)
+    return default
+
+
 def ensure_signed_in(args) -> bool:
     """Get the signed-in profile into a usable state, signing in if needed.
 
     Returns whether hire rate is available afterwards. At most one sign-in is
     attempted per run, so a refused login cannot loop.
 
-    Auto sign-in needs a person at the keyboard, so it is skipped in watch
-    mode and whenever --no-auto-login is passed; those fall back to anonymous
-    rather than blocking on a window nobody will see.
+    With someone at the keyboard the choice is theirs: --logged-in is asked for
+    precisely when hire rate is the point of the run, and quietly downgrading
+    it to an anonymous run produces a file that looks complete and has empty
+    hire-rate columns. Unattended runs keep the old behaviour — sign in when
+    allowed, otherwise warn and fall back — because there is nobody to ask and
+    blocking on a window nobody will see is worse.
     """
     state = probe_session_state(args)
     if state == "live":
         return True
-    if state == "unknown":
-        # A timeout is not evidence of anything. Try the run as-is.
-        LOGGER.warning("Could not confirm the session — trying it anyway.")
-        return True
 
-    auto = not (args.no_auto_login or args.watch)
-    if not auto:
-        LOGGER.warning(
-            "Session is %s and auto sign-in is off%s — continuing anonymously.",
-            state, " (watch mode)" if args.watch else "",
-        )
-        return False
+    if can_ask(args):
+        choice = ask_about_session(state)
+        if choice == "stop":
+            raise RunAborted(
+                "Stopped before scraping. Sign in with --login (or "
+                "--reset-login then --login), or drop --logged-in to run "
+                "anonymously."
+            )
+        if choice == "anonymous":
+            LOGGER.warning(
+                "Continuing anonymously — hire rate and jobs-posted will be empty."
+            )
+            return False
+        if choice == "reset":
+            reset_login_profile()
 
-    if state == "rate_limited":
-        # A flagged profile stays flagged; signing in again on top of it just
-        # reproduces the block, so start from a clean one.
-        LOGGER.warning(
-            "This profile is rate limited. Resetting it and signing in again."
-        )
-        reset_login_profile()
     else:
-        LOGGER.warning("Not signed in. Opening a sign-in window.")
+        if state == "unknown":
+            # A timeout is not evidence of anything. Try the run as-is.
+            LOGGER.warning(
+                "Could not confirm the session — trying it anyway. If hire rate "
+                "comes back empty, check with --login-status."
+            )
+            return True
+
+        auto = not (args.no_auto_login or args.watch)
+        if not auto:
+            LOGGER.warning(
+                "Session is %s and auto sign-in is off%s — continuing anonymously.",
+                state, " (watch mode)" if args.watch else "",
+            )
+            return False
+
+        if state == "rate_limited":
+            # A flagged profile stays flagged; signing in again on top of it
+            # just reproduces the block, so start from a clean one.
+            LOGGER.warning(
+                "This profile is rate limited. Resetting it and signing in again."
+            )
+            reset_login_profile()
+        else:
+            LOGGER.warning("Not signed in. Opening a sign-in window.")
 
     if run_login(args) != 0:
         LOGGER.warning("Sign-in did not complete — continuing anonymously.")
@@ -620,6 +715,10 @@ def build_enricher(args, proxy_manager):
     # needs the profile to itself, and Chrome allows one process per profile.
     if logged_in and not args.no_browser:
         logged_in = ensure_signed_in(args)
+
+    # What the run actually ended up with, as opposed to what was asked for.
+    # `run_enrichment` uses it to check the session delivered what it promised.
+    args.logged_in_active = logged_in
 
     if not args.no_browser:
         try:
@@ -697,6 +796,18 @@ def run_enrichment(enricher, jobs, args) -> None:
     usable = sum(1 for r in results if r.fetch_status == "ok")
     LOGGER.info("Client details attached for %d/%d jobs", usable, len(targets))
 
+    # The session check runs before any job page is loaded, so it can only ever
+    # predict. This is the outcome itself: a signed-in run that produced no
+    # hire rate at all did not get what it was for, and saying so here beats
+    # the user finding an empty column later.
+    if getattr(args, "logged_in_active", False) and usable:
+        if not any(r.hire_rate is not None for r in results):
+            LOGGER.warning(
+                "Signed in, but not one client came back with a hire rate. The "
+                "session is probably not live after all — check it with "
+                "--login-status, or run --reset-login then --login."
+            )
+
     if not args.separate_clients:
         return
 
@@ -748,7 +859,11 @@ def main(argv: list[str] | None = None) -> int:
         NoProxyManager() if args.no_proxy else build_proxy_manager(args.webshare_url)
     )
     scraper = UpworkScraper(proxy_manager=proxy_manager, workers=args.workers)
-    enricher = build_enricher(args, proxy_manager)
+    try:
+        enricher = build_enricher(args, proxy_manager)
+    except RunAborted as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 3
 
     # Line-oriented formats are required whenever output is appended in stages.
     fmt = args.fmt

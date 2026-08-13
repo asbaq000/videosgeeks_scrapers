@@ -6,7 +6,7 @@ Add `--format csv` and name the file `.csv`. Everything the JSON holds is in
 the CSV too - 14 job columns, plus 32 `client_*` columns once `--enrich-clients`
 has run.
 
-**1. Ten jobs, up to 2 days old, full client data (no hire rate)**
+**1. Ten jobs, up to 2 days old, full client data (no hire rate no login required)**
 
 ```
 python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 10 --enrich-clients --format csv --out jobs.csv
@@ -20,7 +20,7 @@ python -m upwork_scraper --login
 python -m upwork_scraper --niche video --pages 1 --max-age-days 2 --limit 5 --enrich-clients --logged-in --format csv --out jobs.csv
 ```
 
-Keep `--limit 3` on the signed-in run. A signed-in session gets soft-blocked
+Keep `--limit 5` on the signed-in run. A signed-in session gets soft-blocked
 after roughly a dozen job-page loads, and the block is account-scoped, so a
 bigger limit costs you the account's access rather than getting you more rows.
 
