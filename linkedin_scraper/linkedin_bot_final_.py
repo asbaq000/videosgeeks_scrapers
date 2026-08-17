@@ -13,6 +13,21 @@ LONG_FORM_MIN ($/minute, long-form) or SHORT_MIN ($/short or /reel,
 Shorts) - a post with no stated rate at all is rejected instead of
 being saved as "Not stated". See rate_meets_minimum() below.
 
+Two lead-quality filters run on top of that (see the LEAD LOCATION
+and VIDEO LANGUAGE sections):
+
+  * Asia-based leads are dropped. Region is inferred from the author
+    headline, location phrases in the post, currency/phone/timezone
+    markers and non-Latin script, with Groq as a second opinion.
+  * Posts whose videos are in any language other than English are
+    dropped ("Hindi videos", "Spanish voiceover", "must be fluent in
+    Arabic", a post body written in another script, ...).
+
+Both only reject on positive evidence. A post that says nothing about
+where the poster is or what language the videos are in is kept and
+annotated in the sheet - see REJECT_UNKNOWN_LOCATION /
+REJECT_UNKNOWN_LANGUAGE to make either one strict instead.
+
 A normal (non---test) run searches for up to MAX_CANDIDATES_PER_RUN
 (100) candidate URLs per run, spread across MAX_KEYWORDS_PER_RUN
 keyword(s) - already the case below, unchanged from linkedin_bot.py.
@@ -124,6 +139,51 @@ SHORT_MIN = 10.00
 # filter or sort in the sheet itself instead of losing borderline/
 # unpriced posts before you ever see them. See rate_meets_minimum()
 # and process_post() below.
+
+
+# ------------------------------------------------------------
+# Lead location filter
+#
+# Drop leads based in Asia. Nothing about the poster's location is
+# exposed as a structured field on a post page, so the region is
+# inferred from evidence in the post itself - see detect_lead_region().
+# ------------------------------------------------------------
+
+EXCLUDE_ASIA_LEADS = True
+
+# The Middle East (UAE, Saudi, Qatar, Israel, ...) is geographically
+# West Asia, so "not from Asia" excludes it by default. Dubai/Riyadh
+# clients often pay well, though - set this to False to keep them
+# while still dropping South/East/Southeast Asia.
+EXCLUDE_MIDDLE_EAST_LEADS = True
+
+# Turkey, Russia, Georgia, Armenia, Azerbaijan, Cyprus and Kazakhstan
+# straddle Europe and Asia. Kept by default - people saying "not from
+# Asia" in a hiring context generally do not have Istanbul in mind.
+TREAT_TRANSCONTINENTAL_AS_ASIA = False
+
+# When the post gives no location evidence at all, keep it (and record
+# "Unknown" in the sheet) rather than dropping it. Most posts from any
+# region say nothing about location, so flipping this to True rejects
+# the large majority of otherwise-good leads.
+REJECT_UNKNOWN_LOCATION = False
+
+
+# ------------------------------------------------------------
+# Video language filter
+#
+# Only keep jobs where the videos themselves are in English. A post
+# asking for Hindi/Spanish/Arabic/... content is dropped even when the
+# post is written in English - see detect_video_language().
+# ------------------------------------------------------------
+
+REQUIRE_ENGLISH_VIDEOS = True
+
+# Posts that never name a language are kept and marked "Not stated".
+# Every post that gets this far already matched English hiring phrases
+# (is_video_editing_job), so an unstated language is far more likely to
+# mean English than to mean something else.
+REJECT_UNKNOWN_LANGUAGE = False
 
 
 # Time-unit conversion, for posts quoting a rate per hour/day/week/
@@ -335,6 +395,14 @@ SHEET_HEADERS = [
     "Niche",
     "Summary",
     "Found At",
+    # Appended at the END, not slotted in next to "Author Name", on
+    # purpose: only the header row gets rewritten when the layout
+    # changes (see connect_sheet), so inserting a column mid-list would
+    # leave every row written by an earlier version misaligned under
+    # the new headers. New columns at the end just read as blank for
+    # older rows.
+    "Lead Location",
+    "Video Language",
 ]
 
 
@@ -367,7 +435,7 @@ def connect_sheet():
     except gspread.WorksheetNotFound:
         print(f"Worksheet '{GOOGLE_WORKSHEET_NAME}' not found - creating it.")
         worksheet = spreadsheet.add_worksheet(
-            title=GOOGLE_WORKSHEET_NAME, rows=1000, cols=10
+            title=GOOGLE_WORKSHEET_NAME, rows=1000, cols=len(SHEET_HEADERS)
         )
         worksheet.append_row(SHEET_HEADERS)
 
@@ -420,6 +488,8 @@ def save_result(worksheet, result):
         print(f"Meets bar:    {result['meets_pricing_bar']}")
         print(f"Author:       {result['author_name']}")
         print(f"Niche:        {result['author_headline']}")
+        print(f"Location:     {result['lead_location']}")
+        print(f"Video lang:   {result['video_language']}")
         print(f"Found at:     {found_at}")
         print(f"Text:         {result['text'][:300]}...")
         print("-" * 40)
@@ -436,6 +506,8 @@ def save_result(worksheet, result):
         result["author_headline"],
         result["text"][:1000],
         found_at,
+        result["lead_location"],
+        result["video_language"],
     ])
 
     print("Saved to Google Sheet.")
@@ -652,6 +724,497 @@ def is_complex_graphics_job(text):
     text = text.lower()
 
     return any(term in text for term in EXCLUDED_TERMS)
+
+
+# ============================================================
+# LEAD LOCATION
+#
+# A post page exposes no structured location for its author - not for
+# the poster, not for the company - so the region has to be inferred
+# from the text. Three kinds of evidence, in descending reliability:
+#
+#   1. Hard markers anywhere in the post: currency symbols/codes
+#      (Rs, INR, lakh, AED), phone country codes (+91), timezone
+#      abbreviations (IST, PKT), and non-Latin script.
+#   2. A place name in the author's HEADLINE. Headlines routinely end
+#      with a city ("Founder @Studio | Mumbai"), and unlike the post
+#      body the headline is about the poster.
+#   3. A place name in the post BODY, but only right after a location
+#      cue ("based in Karachi", "our team in Manila"). A bare mention
+#      is not enough - "we make videos for the Japan market" says
+#      nothing about where the poster sits.
+#
+# The author's own NAME is never scanned. Half the false positives in
+# a name-inclusive scan come from people called Jordan, Israel or
+# China, and guessing someone's location from their name is not a
+# thing this should be doing anyway.
+# ============================================================
+
+# South, East, Southeast and Central Asia.
+ASIA_PLACE_TERMS = [
+    # South Asia
+    "india", "indian", "bharat", "pakistan", "pakistani",
+    "bangladesh", "bangladeshi", "sri lanka", "sri lankan",
+    "nepal", "nepali", "nepalese", "bhutan", "maldives",
+    "afghanistan", "afghan",
+    "mumbai", "bombay", "delhi", "new delhi", "noida", "gurgaon",
+    "gurugram", "bangalore", "bengaluru", "hyderabad", "chennai",
+    "kolkata", "calcutta", "pune", "ahmedabad", "surat", "jaipur",
+    "indore", "lucknow", "chandigarh", "kochi", "coimbatore",
+    "nagpur", "bhopal", "patna", "goa", "kerala", "punjab",
+    "gujarat", "maharashtra", "rajasthan", "tamil nadu",
+    "uttar pradesh", "karnataka", "telangana",
+    "karachi", "lahore", "islamabad", "rawalpindi", "faisalabad",
+    "peshawar", "multan", "sialkot", "quetta",
+    "dhaka", "chittagong", "colombo", "kathmandu",
+    # East Asia
+    "china", "chinese", "mainland china", "hong kong", "hongkong",
+    "macau", "macao", "taiwan", "taiwanese", "japan", "japanese",
+    "south korea", "north korea", "korea", "korean", "mongolia",
+    "mongolian",
+    "beijing", "shanghai", "shenzhen", "guangzhou", "hangzhou",
+    "chengdu", "tokyo", "osaka", "kyoto", "yokohama", "seoul",
+    "busan", "incheon", "taipei", "ulaanbaatar",
+    # Southeast Asia
+    "philippines", "filipino", "filipina", "pinoy", "indonesia",
+    "indonesian", "malaysia", "malaysian", "singapore",
+    "singaporean", "thailand", "vietnam", "vietnamese",
+    "cambodia", "cambodian", "laos", "myanmar", "burma", "brunei",
+    "timor",
+    "manila", "quezon city", "makati", "cebu", "davao", "pasig",
+    "taguig", "jakarta", "surabaya", "bandung", "medan", "bali",
+    "denpasar", "yogyakarta", "kuala lumpur", "penang", "johor",
+    "selangor", "bangkok", "chiang mai", "phuket", "hanoi",
+    "ho chi minh", "saigon", "da nang", "phnom penh", "yangon",
+    # Central Asia
+    "kazakhstan", "uzbekistan", "kyrgyzstan", "tajikistan",
+    "turkmenistan", "tashkent", "almaty", "astana", "bishkek",
+]
+
+# West Asia / Middle East, kept separate so EXCLUDE_MIDDLE_EAST_LEADS
+# can spare it.
+MIDDLE_EAST_PLACE_TERMS = [
+    "uae", "u.a.e.", "united arab emirates", "emirati",
+    "saudi arabia", "saudi", "ksa", "qatar", "qatari", "kuwait",
+    "kuwaiti", "bahrain", "bahraini", "oman", "omani", "jordan",
+    "jordanian", "lebanon", "lebanese", "syria", "syrian", "iraq",
+    "iraqi", "iran", "iranian", "israel", "israeli", "palestine",
+    "palestinian", "yemen", "gulf region", "gcc",
+    "dubai", "abu dhabi", "sharjah", "ajman", "doha", "riyadh",
+    "jeddah", "dammam", "khobar", "kuwait city", "manama",
+    "muscat", "amman", "beirut", "tel aviv", "jerusalem", "haifa",
+    "baghdad", "erbil", "tehran", "damascus",
+]
+
+# Straddle Europe and Asia - only counted when
+# TREAT_TRANSCONTINENTAL_AS_ASIA is on.
+TRANSCONTINENTAL_PLACE_TERMS = [
+    "turkey", "turkiye", "türkiye", "turkish", "istanbul", "ankara",
+    "izmir", "russia", "russian", "moscow", "saint petersburg",
+    "st petersburg", "cyprus", "nicosia", "georgia country",
+    "tbilisi", "armenia", "yerevan", "azerbaijan", "baku",
+]
+
+
+def _place_pattern(terms):
+    """Word-bounded alternation over a place list, longest match first."""
+
+    # Longest-first so "sri lanka" wins over a hypothetical "sri", and
+    # "new delhi" over "delhi" - Python's alternation takes the first
+    # branch that matches, not the longest one.
+    ordered = sorted(set(terms), key=len, reverse=True)
+
+    return r"\b(?:" + "|".join(re.escape(term) for term in ordered) + r")\b"
+
+
+ASIA_PLACE_RE = re.compile(_place_pattern(ASIA_PLACE_TERMS), re.I)
+MIDDLE_EAST_PLACE_RE = re.compile(_place_pattern(MIDDLE_EAST_PLACE_TERMS), re.I)
+TRANSCONTINENTAL_PLACE_RE = re.compile(
+    _place_pattern(TRANSCONTINENTAL_PLACE_TERMS), re.I
+)
+
+# Phrases that make the place name that follows them a statement about
+# location, rather than a passing mention of a market or an audience.
+LOCATION_CUE = (
+    r"\b(?:based\s+(?:in|out\s+of)|located\s+in|living\s+in|live\s+in|"
+    r"working\s+from|remote\s+from|relocat\w*\s+to|"
+    r"(?:office|offices|hq|studio|agency|team|company|headquarters)"
+    r"\s+(?:in|at)|headquartered\s+in|"
+    r"(?:candidates?|editors?|freelancers?|applicants?|someone|"
+    r"anyone|somebody|talent|people)\s+(?:from|in|based\s+in)|"
+    r"we\s+are\s+(?:in|based\s+in)|i\s+am\s+(?:in|based\s+in)|"
+    r"i'?m\s+(?:in|based\s+in)|from|in)\s+(?:the\s+)?"
+)
+
+# The mirror image: "India based", "Mumbai-based", "Manila team".
+#
+# "market" and "region" are deliberately absent: "the Japan market"
+# and "the APAC region" describe an audience, which says nothing about
+# where the poster sits.
+LOCATION_SUFFIX = r"[\s,-]{0,3}(?:based|office|team|hq|headquarters)\b"
+
+
+def _place_in_body(pattern, text):
+    """Find a place name that is actually being used as a location."""
+
+    for match in pattern.finditer(text):
+        before = text[max(0, match.start() - 40):match.start()]
+
+        if re.search(LOCATION_CUE + r"$", before, re.I):
+            return match.group(0)
+
+        after = text[match.end():match.end() + 12]
+
+        if re.match(LOCATION_SUFFIX, after, re.I):
+            return match.group(0)
+
+    return None
+
+
+# Currency, dialling codes, timezones and scripts. These are decisive
+# wherever they appear - a rate quoted in rupees or a "+92" contact
+# number pins the post down regardless of sentence structure.
+#
+# Deliberately NOT included: "PHP" (the Philippine peso code collides
+# with the programming language), "PST" (Pakistan Standard Time
+# collides with US Pacific), "CST" (China vs US Central) and "BST"
+# (Bangladesh vs British Summer Time). Each would misfire more often
+# than it would fire correctly.
+ASIA_HARD_SIGNALS = [
+    (re.compile(r"[₹₨৳฿₫₱₩¥₭₮]"), "Asian currency symbol"),
+    (
+        re.compile(
+            r"\b(?:INR|PKR|BDT|LKR|NPR|IDR|MYR|SGD|THB|VND|CNY|RMB|"
+            r"JPY|KRW|TWD|HKD)\b"
+        ),
+        "Asian currency code",
+    ),
+    (re.compile(r"\brs\.?\s*\d", re.I), "rupee amount"),
+    (re.compile(r"\b(?:lakh|lakhs|lac|lacs|crore|crores)\b", re.I), "lakh/crore"),
+    (
+        re.compile(
+            r"\+\s?(?:91|92|880|977|94|62|63|60|65|66|84|86|81|82|"
+            r"852|886|998|976)[\s\-.]?\d"
+        ),
+        "Asian dialling code",
+    ),
+    (
+        re.compile(r"\b(?:IST|PKT|PHT|WIB|WITA|SGT|JST|KST|ICT|HKT|MYT)\b"),
+        "Asian timezone",
+    ),
+]
+
+MIDDLE_EAST_HARD_SIGNALS = [
+    (re.compile(r"[﷼₪]"), "Middle Eastern currency symbol"),
+    (
+        re.compile(r"\b(?:AED|SAR|QAR|KWD|BHD|OMR|ILS|JOD|IQD|IRR)\b"),
+        "Middle Eastern currency code",
+    ),
+    (re.compile(r"\bdhs?\.?\s*\d", re.I), "dirham amount"),
+    (
+        re.compile(r"\+\s?(?:971|966|974|965|973|968|972|962|961|964|98)[\s\-.]?\d"),
+        "Middle Eastern dialling code",
+    ),
+]
+
+# Script evidence is counted, not matched as a run: Indic and Thai
+# words are short and space-separated, so requiring N consecutive
+# in-range characters would miss a post written entirely in Hindi.
+# Counting every in-range character across the post catches it while
+# still ignoring a one-word greeting or a name.
+ASIAN_SCRIPT_RE = re.compile(
+    # Devanagari, Bengali, Gurmukhi, Gujarati, Tamil, Telugu, Kannada,
+    # Malayalam, Sinhala, Thai, Lao, Myanmar, CJK, Hiragana/Katakana,
+    # Hangul.
+    r"[ऀ-ॿঀ-৿਀-੿઀-૿"
+    r"஀-௿ఀ-౿ಀ-೿ഀ-ൿ"
+    r"඀-෿฀-๿຀-໿က-႟"
+    r"぀-ヿ一-鿿가-힯]"
+)
+
+MIDDLE_EAST_SCRIPT_RE = re.compile(r"[؀-ۿݐ-ݿ֐-׿]")
+
+SCRIPT_COUNT_THRESHOLD = 15
+
+
+def detect_lead_region(text, headline=None, author_name=None):
+    """
+    Return (region, evidence).
+
+    region is "Asia", "Middle East", "Transcontinental" or "Unknown";
+    evidence is a short human-readable reason for the sheet and the
+    log. Only Asian regions are detected here - a post from anywhere
+    else looks exactly like a post with no location evidence, and both
+    come back "Unknown". Groq fills in the actual country when it can.
+    """
+
+    text = text or ""
+
+    # The author's name is stripped so a "Jordan"/"Israel"/"China" in
+    # someone's name cannot be read as a location.
+    if author_name:
+        text = re.sub(re.escape(author_name), " ", text, flags=re.I)
+
+    headline = (headline or "").strip()
+
+    if len(ASIAN_SCRIPT_RE.findall(text)) >= SCRIPT_COUNT_THRESHOLD:
+        return "Asia", "post written in an Asian script"
+
+    if len(MIDDLE_EAST_SCRIPT_RE.findall(text)) >= SCRIPT_COUNT_THRESHOLD:
+        return "Middle East", "post written in Arabic/Hebrew script"
+
+    for pattern, label in ASIA_HARD_SIGNALS:
+        match = pattern.search(text)
+        if match:
+            return "Asia", f"{label}: {match.group(0).strip()[:30]}"
+
+    for pattern, label in MIDDLE_EAST_HARD_SIGNALS:
+        match = pattern.search(text)
+        if match:
+            return "Middle East", f"{label}: {match.group(0).strip()[:30]}"
+
+    # A place name in the headline needs no cue phrase - the whole
+    # headline is about the poster.
+    if headline:
+        for pattern, region in (
+            (ASIA_PLACE_RE, "Asia"),
+            (MIDDLE_EAST_PLACE_RE, "Middle East"),
+            (TRANSCONTINENTAL_PLACE_RE, "Transcontinental"),
+        ):
+            match = pattern.search(headline)
+            if match:
+                return region, f"headline mentions {match.group(0)}"
+
+    for pattern, region in (
+        (ASIA_PLACE_RE, "Asia"),
+        (MIDDLE_EAST_PLACE_RE, "Middle East"),
+        (TRANSCONTINENTAL_PLACE_RE, "Transcontinental"),
+    ):
+        place = _place_in_body(pattern, text)
+        if place:
+            return region, f"post says {place}"
+
+    return "Unknown", ""
+
+
+def region_is_excluded(region):
+    """Should a lead from this region be dropped?"""
+
+    if region == "Asia":
+        return EXCLUDE_ASIA_LEADS
+
+    if region == "Middle East":
+        return EXCLUDE_ASIA_LEADS and EXCLUDE_MIDDLE_EAST_LEADS
+
+    if region == "Transcontinental":
+        return EXCLUDE_ASIA_LEADS and TREAT_TRANSCONTINENTAL_AS_ASIA
+
+    return False
+
+
+# ============================================================
+# VIDEO LANGUAGE
+#
+# The job is only wanted when the VIDEOS are in English. The post
+# being written in English proves nothing on its own - plenty of
+# English-language posts hire for Hindi, Spanish or Arabic channels -
+# so what gets matched is a language name used in a content context
+# ("Hindi videos", "voiceover in Spanish", "fluent in Arabic"), plus
+# the case where the post body itself is not written in English.
+#
+# A post naming English AND another language still fails: the ask was
+# English and nothing else.
+# ============================================================
+
+NON_ENGLISH_LANGUAGES = [
+    "hindi", "hinglish", "urdu", "punjabi", "bengali", "bangla",
+    "marathi", "gujarati", "tamil", "telugu", "kannada",
+    "malayalam", "odia", "assamese", "sinhala", "nepali",
+    "arabic", "hebrew", "farsi", "persian", "pashto", "turkish",
+    "russian", "ukrainian", "polish", "czech", "romanian",
+    "hungarian", "greek", "bulgarian", "serbian", "croatian",
+    "german", "deutsch", "french", "francais", "français",
+    "spanish", "espanol", "español", "castellano", "portuguese",
+    "portugues", "português", "italian", "dutch", "flemish",
+    "swedish", "norwegian", "danish", "finnish",
+    "chinese", "mandarin", "cantonese", "japanese", "korean",
+    "thai", "vietnamese", "indonesian", "bahasa", "malay",
+    "tagalog", "filipino", "khmer", "burmese",
+    "swahili", "afrikaans", "amharic", "somali", "hausa", "yoruba",
+]
+
+LANGUAGE_ALTERNATION = "|".join(
+    re.escape(language)
+    for language in sorted(set(NON_ENGLISH_LANGUAGES), key=len, reverse=True)
+)
+
+# Words that turn a language name into a statement about the work.
+# Without one of these, "French" could be anything.
+LANGUAGE_CONTEXT_WORDS = (
+    r"videos?|content|channel|reels?|shorts?|clips?|footage|"
+    r"podcasts?|voice\s?overs?|vo|audio|dubbing|dubs?|subtitles?|"
+    r"captions?|scripts?|narration|translation|market|audience|"
+    r"language|speaking|speaker|speakers|native|fluency"
+)
+
+LANGUAGE_CONTEXT = r"(?:" + LANGUAGE_CONTEXT_WORDS + r")"
+
+# Words allowed to sit between the language name and the content word,
+# so "Hindi YouTube channel" and "Spanish short form videos" match
+# while "Italian restaurant chain videos" - a client, not a language
+# requirement - does not. Restricted to platform and format words on
+# purpose; a wildcard here is what makes that false positive possible.
+LANGUAGE_FILLER = (
+    r"(?:youtube|yt|instagram|ig|insta|tiktok|facebook|fb|linkedin|"
+    r"twitter|snapchat|social|media|short|long|form|faceless|vertical|"
+    r"daily|weekly|new|our|the|based|speaking|language|only)"
+)
+
+# Work words that make a following "in <language>" about the job.
+LANGUAGE_WORK_WORDS = (
+    r"(?:edit|edits|edited|editing|editor|editors|translate|translated|"
+    r"translating|dub|dubbed|dubbing|record|recorded|recording|"
+    r"produce|produced|producing|write|writing|written|create|"
+    r"creating|deliver|delivered|publish|publishing|post|posting|"
+    r"speak|speaks|spoken|shoot|shot|film|filmed|"
+    + LANGUAGE_CONTEXT_WORDS + r")"
+)
+
+# What may follow the language name. "videos in Hindi." and "in Hindi
+# and English" are about language; "for Italian restaurant chains" is
+# not, and the follow-set is what tells them apart.
+LANGUAGE_FOLLOW = (
+    r"(?=\s*(?:[.,;:!?)\]\-–—/|]|$|and\b|or\b|only\b|plus\b|"
+    r"as\s+well\b|" + LANGUAGE_CONTEXT + r"\b))"
+)
+
+NON_ENGLISH_PATTERNS = [
+    # "videos in Hindi", "translate into Spanish", "editing for Arabic"
+    re.compile(
+        r"\b" + LANGUAGE_WORK_WORDS + r"\b[\w\s,'’/-]{0,40}?"
+        r"\b(?:in|into|for|to)\s+(?P<lang>" + LANGUAGE_ALTERNATION + r")\b"
+        + LANGUAGE_FOLLOW,
+        re.I,
+    ),
+    # "Hindi videos", "Spanish voiceover", "Tamil content", and with
+    # a platform/format word in between: "Hindi YouTube channel",
+    # "Spanish short form videos".
+    re.compile(
+        r"\b(?P<lang>" + LANGUAGE_ALTERNATION + r")"
+        r"(?:[\s-]+" + LANGUAGE_FILLER + r"){0,3}"
+        r"[\s-]+" + LANGUAGE_CONTEXT + r"\b",
+        re.I,
+    ),
+    # "fluent in Hindi", "must know Arabic", "native Spanish"
+    re.compile(
+        r"\b(?:fluent|fluency|native|proficient|proficiency|speaks?|"
+        r"speaking|understand|understands|knowledge\s+of|command\s+of|"
+        r"must\s+know|should\s+know|knows)\b[\w\s,]{0,20}?\b"
+        r"(?P<lang>" + LANGUAGE_ALTERNATION + r")\b",
+        re.I,
+    ),
+    # "Roman Urdu", "Roman Hindi" - transliterated, still not English.
+    re.compile(r"\broman\s+(?P<lang>urdu|hindi|sindhi)\b", re.I),
+    # "videos in English and Spanish", "Hindi/English content". A
+    # second language next to English is still not English-only, and
+    # the preposition only ever precedes the first name in a list, so
+    # the patterns above cannot see the second one.
+    re.compile(
+        r"\benglish\s*(?:[,/&+]|\band\b|\bor\b)\s*"
+        r"(?P<lang>" + LANGUAGE_ALTERNATION + r")\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?P<lang>" + LANGUAGE_ALTERNATION + r")\s*"
+        r"(?:[,/&+]|\band\b|\bor\b)\s*english\b",
+        re.I,
+    ),
+]
+
+# The post body itself written in another script. Same ranges as the
+# location scan, plus Cyrillic and Greek, which say nothing about Asia
+# but plenty about the language.
+NON_LATIN_BODY_RE = re.compile(
+    r"[Ͱ-ϿЀ-ӿ֐-׿؀-ۿݐ-ݿ"
+    r"ऀ-ॿঀ-৿਀-੿઀-૿஀-௿"
+    r"ఀ-౿ಀ-೿ഀ-ൿ඀-෿฀-๿"
+    r"຀-໿က-႟぀-ヿ一-鿿가-힯]"
+)
+
+# Below this many non-Latin characters, treat it as decoration (a
+# stray greeting, a name, an emoji-adjacent glyph) rather than the
+# post being written in another language.
+NON_LATIN_BODY_THRESHOLD = 15
+
+ENGLISH_STATED_RE = re.compile(
+    r"\b(?:english[\s-]?(?:speaking|speaker|native|language|content|"
+    r"videos?|voice\s?over|audio|only)|"
+    r"(?:native|fluent|fluency\s+in|good|excellent|strong)\s+english|"
+    r"videos?\s+(?:are\s+)?in\s+english|content\s+is\s+in\s+english|"
+    r"us\s+english|uk\s+english|american\s+english|british\s+english)\b",
+    re.I,
+)
+
+
+def detect_video_language(text):
+    """
+    Return (label, is_english).
+
+    label is "English", "Not stated", or "Non-English (<language>)".
+    is_english is None when nothing in the post settles it - the caller
+    decides what to do with that via REJECT_UNKNOWN_LANGUAGE.
+    """
+
+    text = text or ""
+
+    non_latin = len(NON_LATIN_BODY_RE.findall(text))
+
+    if non_latin >= NON_LATIN_BODY_THRESHOLD:
+        return "Non-English (post not in English)", False
+
+    for pattern in NON_ENGLISH_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            language = match.group("lang").title()
+            return f"Non-English ({language})", False
+
+    if ENGLISH_STATED_RE.search(text):
+        return "English", True
+
+    return "Not stated", None
+
+
+def groq_language_verdict(language_text):
+    """
+    Read Groq's video_language string into (label, is_english).
+
+    Returns (None, None) when Groq had no opinion, so an unreachable
+    or unsure model never counts as either verdict.
+    """
+
+    if not language_text:
+        return None, None
+
+    named = [
+        part.strip()
+        for part in re.split(r"[,/&+]|\band\b", language_text)
+        if part.strip()
+    ]
+
+    named = [
+        part for part in named
+        if part.lower() not in ("unknown", "none", "n/a", "na", "not stated")
+    ]
+
+    if not named:
+        return None, None
+
+    other = [part for part in named if part.lower() != "english"]
+
+    if other:
+        return f"Non-English ({', '.join(other)})", False
+
+    return "English", True
 
 
 # ============================================================
@@ -996,34 +1559,72 @@ GROQ_SYSTEM_PROMPT = (
     "You summarize LinkedIn hiring posts for a video editor who is "
     "job-hunting. Given the raw scraped text of one post, respond "
     "with ONLY a JSON object (no markdown, no commentary) with "
-    "exactly two keys: "
+    "exactly these five keys: "
     '"summary" - a clean 1-2 sentence summary of what the job '
     "actually involves and requires (skip hashtags, emoji, and "
-    "boilerplate like \"DM me\"), and "
+    "boilerplate like \"DM me\"); "
     '"niche" - a short 2-6 word label for the content niche/industry '
     'this job is for (e.g. "D2C e-commerce short-form video", '
     '"podcast editing", "SaaS explainer videos", "personal brand '
-    'vlog"). If the post text is too corrupted/unclear to summarize, '
-    'set both fields to "".'
+    'vlog"); '
+    '"location" - the country or city the PERSON OR COMPANY DOING THE '
+    "HIRING is based in, exactly as evidenced by the post (author "
+    "headline, currency, phone code, explicit mention). Use \"\" if "
+    "the post gives no evidence. Never guess from the author's name; "
+    "a country mentioned only as a target market or audience is NOT "
+    "their location; "
+    '"region" - one of exactly: "Asia", "Middle East", "Europe", '
+    '"North America", "South America", "Africa", "Oceania", '
+    '"Unknown". Use "Asia" for South, East, Southeast and Central '
+    'Asia; "Middle East" for the Gulf, Israel, Iran, Iraq, Jordan, '
+    'Lebanon, Syria; "Unknown" whenever location is ""; '
+    '"video_language" - the language THE VIDEOS THEMSELVES are in, '
+    'as a plain language name like "English" or "Hindi". This is not '
+    "the language the post is written in: an English-language post "
+    "hiring for a Hindi channel is \"Hindi\". If more than one "
+    'language is required, return them comma-separated. Use "" if '
+    "the post never indicates the content language. "
+    'If the post text is too corrupted/unclear to read, set every '
+    'field to "".'
 )
+
+
+GROQ_EMPTY_RESULT = {
+    "summary": None,
+    "niche": None,
+    "location": None,
+    "region": None,
+    "video_language": None,
+}
+
+GROQ_REGIONS = {
+    "asia": "Asia",
+    "middle east": "Middle East",
+    "europe": "Europe",
+    "north america": "North America",
+    "south america": "South America",
+    "africa": "Africa",
+    "oceania": "Oceania",
+}
 
 
 def summarize_post_with_groq(post_text):
     """
-    Return (summary, niche) via Groq, or (None, None) if unavailable.
+    Return a dict of summary/niche/location/region/video_language.
 
-    Never raises - a Groq failure (missing key, network error, bad
-    response) should not block saving the post itself, just leave
-    these two fields empty for that row.
+    Every value is None when Groq is unavailable or the call fails -
+    a Groq outage should not block saving the post itself, and it
+    must not silently turn into a location or language verdict
+    either, so the caller falls back to the regex detectors.
     """
 
     if not USE_GROQ_SUMMARY:
-        return None, None
+        return dict(GROQ_EMPTY_RESULT)
 
     api_key = get_groq_api_key()
 
     if not api_key:
-        return None, None
+        return dict(GROQ_EMPTY_RESULT)
 
     try:
         response = requests.post(
@@ -1040,7 +1641,7 @@ def summarize_post_with_groq(post_text):
                 ],
                 "response_format": {"type": "json_object"},
                 "temperature": 0.2,
-                "max_tokens": 300,
+                "max_tokens": 400,
             },
             timeout=20,
         )
@@ -1050,14 +1651,24 @@ def summarize_post_with_groq(post_text):
         content = response.json()["choices"][0]["message"]["content"]
         parsed = json.loads(content)
 
-        summary = normalize_text(str(parsed.get("summary", ""))) or None
-        niche = normalize_text(str(parsed.get("niche", ""))) or None
+        region = normalize_text(str(parsed.get("region", ""))).lower()
 
-        return summary, niche
+        return {
+            "summary": normalize_text(str(parsed.get("summary", ""))) or None,
+            "niche": normalize_text(str(parsed.get("niche", ""))) or None,
+            "location": normalize_text(str(parsed.get("location", ""))) or None,
+            # Anything the model invents outside the allowed set (and
+            # its own "Unknown") collapses to None, i.e. "no opinion" -
+            # never to a verdict.
+            "region": GROQ_REGIONS.get(region),
+            "video_language": (
+                normalize_text(str(parsed.get("video_language", ""))) or None
+            ),
+        }
 
     except Exception as error:
         print("  Groq summary failed (keeping raw text):", error)
-        return None, None
+        return dict(GROQ_EMPTY_RESULT)
 
 
 # ============================================================
@@ -1893,6 +2504,26 @@ def read_post(page, url):
 # PROCESS ONE POST
 # ============================================================
 
+def format_lead_location(region, evidence, groq):
+    """Build the "Lead Location" cell: what was decided, and on what."""
+
+    # Groq's country string is only used as the label when it does not
+    # contradict the region the post's own text established - otherwise
+    # the cell would read like "Asia - United States".
+    if groq["location"] and groq["region"] in (None, region):
+        detail = groq["location"]
+    else:
+        detail = evidence
+
+    if region == "Unknown":
+        return detail or "Unknown"
+
+    if detail:
+        return f"{region} - {detail}"
+
+    return region
+
+
 def process_post(page, url, keyword):
     """Read and filter one post. Returns a result dict, or None."""
 
@@ -1914,6 +2545,30 @@ def process_post(page, url, keyword):
 
     if is_complex_graphics_job(text):
         print("Rejected: specialized animation/motion/VFX work.")
+        return None
+
+    # Author info is needed by the location filter (the headline is
+    # the strongest single location signal, and the name has to be
+    # excluded from the scan), so it is extracted here rather than
+    # further down with the rest of the row fields.
+    author_name, author_headline = extract_author_info(text)
+
+    # Language and location run on the raw text before the job-type,
+    # date and rate work - they are pure regex, so a post that fails
+    # them costs nothing beyond the read that already happened, and
+    # notably no Groq call.
+    video_language, is_english = detect_video_language(text)
+
+    if REQUIRE_ENGLISH_VIDEOS and is_english is False:
+        print(f"Rejected: videos are not in English - {video_language}.")
+        return None
+
+    lead_region, location_evidence = detect_lead_region(
+        text, author_headline, author_name
+    )
+
+    if region_is_excluded(lead_region):
+        print(f"Rejected: lead is in {lead_region} ({location_evidence}).")
         return None
 
     job_type = detect_job_type(text)
@@ -1946,17 +2601,55 @@ def process_post(page, url, keyword):
     else:
         meets_pricing_bar = "No"
 
-    author_name, author_headline = extract_author_info(text)
-
     # Groq turns the raw text into a clean summary and derives a
     # niche label from the job's actual content - falls back to the
     # raw text / regex-extracted headline if Groq is unavailable or
     # the call fails, so a third-party API being down never blocks a
-    # post from being saved.
-    groq_summary, groq_niche = summarize_post_with_groq(text)
+    # post from being saved. It also reads the poster's location and
+    # the language of the videos, which is where the two filters below
+    # get a second chance at posts the regex pass could not call.
+    groq = summarize_post_with_groq(text)
 
-    display_text = groq_summary or text
-    niche = groq_niche or author_headline
+    display_text = groq["summary"] or text
+    niche = groq["niche"] or author_headline
+
+    # Groq only breaks ties. Where the regex pass already found hard
+    # evidence (a rupee amount, "based in Karachi", a Hindi post body)
+    # that verdict stands - it is reading the post's own words, while
+    # the model is inferring.
+    if lead_region == "Unknown" and groq["region"]:
+        lead_region = groq["region"]
+        location_evidence = groq["location"] or "inferred by Groq"
+
+        if region_is_excluded(lead_region):
+            print(f"Rejected: lead is in {lead_region} ({location_evidence}).")
+            return None
+
+    if is_english is None:
+        groq_label, groq_is_english = groq_language_verdict(
+            groq["video_language"]
+        )
+
+        if groq_is_english is not None:
+            video_language, is_english = groq_label, groq_is_english
+
+            if REQUIRE_ENGLISH_VIDEOS and is_english is False:
+                print(
+                    f"Rejected: videos are not in English - "
+                    f"{video_language} (per Groq)."
+                )
+                return None
+
+    # Strict mode: nothing in the post OR in Groq's reading settled it.
+    if REJECT_UNKNOWN_LOCATION and lead_region == "Unknown":
+        print("Rejected: lead location could not be determined.")
+        return None
+
+    if REJECT_UNKNOWN_LANGUAGE and is_english is None:
+        print("Rejected: video language could not be determined.")
+        return None
+
+    lead_location = format_lead_location(lead_region, location_evidence, groq)
 
     print()
     print("*" * 60)
@@ -1967,6 +2660,8 @@ def process_post(page, url, keyword):
     print(f"Meets bar:  {meets_pricing_bar}")
     print(f"Author:     {author_name or '(not found)'}")
     print(f"Niche:      {niche or '(not found)'}")
+    print(f"Location:   {lead_location}")
+    print(f"Video lang: {video_language}")
     print(f"Posted:     {post_date.strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"URL:        {url}")
     print("*" * 60)
@@ -1981,6 +2676,8 @@ def process_post(page, url, keyword):
         "author_name": author_name or "",
         "author_headline": niche or "",
         "text": display_text,
+        "lead_location": lead_location,
+        "video_language": video_language,
     }
 
 
