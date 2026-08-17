@@ -19,8 +19,8 @@ CSV_FIELDS = [
     # question is always "is it worth answering first?".
     "verdict", "score", "budget", "tweet_url", "handle", "display_name",
     "followers", "posted_at", "age_hours", "text", "bio", "profile_url",
-    "professional_category", "likes", "replies", "views", "niche", "signals",
-    "reject_reason",
+    "professional_category", "location", "location_country", "location_source",
+    "likes", "replies", "views", "niche", "signals", "reject_reason",
 ]
 
 _BADGE = {"hot": "HOT ", "warm": "WARM", "cold": "COLD", "rejected": "----"}
@@ -48,6 +48,7 @@ def to_csv(leads: list[Lead]) -> str:
         # Excel renders embedded newlines as extra rows in some importers.
         row["text"] = " ".join(str(row["text"]).split())
         row["bio"] = " ".join(str(row["bio"] or "").split())
+        row["location"] = " ".join(str(row["location"] or "").split())
         writer.writerow(row)
     return buf.getvalue()
 
@@ -90,10 +91,13 @@ def to_digest(leads: list[Lead], width: int = 100, show_signals: bool = True) ->
         t = lead.tweet
         author = f"@{t.author.handle}" if t.author.handle else "@?"
         followers = f"{t.author.followers:,}" if t.author.followers else "?"
+        # The resolved country, not the raw field: the raw text is in the CSV
+        # for auditing, but a digest is read at a glance and wants one word.
+        where = f", {lead.location_country}" if lead.location_country else ""
         out.append("")
         out.append(
             f"[{_BADGE.get(lead.verdict, '----')} {lead.score:>3}]  "
-            f"{author}  ({followers} followers, {_age(lead)} ago)"
+            f"{author}  ({followers} followers, {_age(lead)} ago{where})"
             + (f"   {lead.budget}" if lead.budget else "")
         )
         out.append(f"  {t.url}")

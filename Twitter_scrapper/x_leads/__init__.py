@@ -17,7 +17,15 @@ def __getattr__(name: str):
     if name in ("XLeadScraper", "ScrapeConfig", "ScrapeResult"):
         from x_leads import scraper
         return getattr(scraper, name)
+    # No playwright behind this one, but it is re-exported the same way to keep
+    # the import surface in one place.
+    if name == "LocationFilter":
+        from x_leads.leads.location import LocationFilter
+        return LocationFilter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["__version__", "XLeadScraper", "ScrapeConfig", "ScrapeResult"]
+__all__ = [
+    "__version__", "XLeadScraper", "ScrapeConfig", "ScrapeResult",
+    "LocationFilter",
+]

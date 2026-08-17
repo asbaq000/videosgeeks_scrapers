@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from x_leads.auth.session import SessionManager, ensure_session
 from x_leads.leads.classifier import LeadClassifier, Thresholds
+from x_leads.leads.location import LocationFilter
 from x_leads.models import Lead
 from x_leads.niches import DEFAULT_NICHE, Niche, load_niche
 from x_leads.search.collector import Collector, CollectStats
@@ -44,6 +45,9 @@ class ScrapeConfig:
     login_timeout_s: int = 300
     verify_session: bool = True
     thresholds: Thresholds = field(default_factory=Thresholds)
+    # Report-only by default, so a first run measures how many X authors can be
+    # placed at all before anything is thrown away on the strength of it.
+    location_filter: LocationFilter = field(default_factory=LocationFilter.default)
 
 
 @dataclass
@@ -55,6 +59,9 @@ class ScrapeResult:
     classified_out: int = 0
     suppressed_as_seen: int = 0
     newly_seen: int = 0
+    # Coverage and per-country counts from the location pass. Populated in
+    # every mode, including report-only, since measuring is the point of it.
+    location_audit: dict = field(default_factory=dict)
 
     @property
     def counts(self) -> dict[str, int]:
@@ -121,8 +128,17 @@ class XLeadScraper:
         )
         leads = classifier.classify_all(tweets)
 
+        # Before the verdict floor, so a location rejection is enforced by the
+        # same filter as every other rejection — and stays visible under
+        # `--include-rejected` with its reason, instead of vanishing silently.
+        audit = cfg.location_filter.annotate(leads)
+
         result = ScrapeResult(
-            leads=leads, stats=stats, queries=queries, tweets_collected=len(tweets)
+            leads=leads,
+            stats=stats,
+            queries=queries,
+            tweets_collected=len(tweets),
+            location_audit=audit,
         )
 
         floor = VERDICT_RANK.get(cfg.min_verdict, 1)
@@ -130,7 +146,9 @@ class XLeadScraper:
             lead for lead in leads
             if cfg.include_rejected or VERDICT_RANK[lead.verdict] >= max(floor, 1)
         ]
-        result.classified_out = len(leads) - len(kept)
+        # Location drops are reported on their own line, so they are excluded
+        # here rather than being lumped in with "sellers, noise or off-topic".
+        result.classified_out = max(0, len(leads) - len(kept) - audit.get("dropped", 0))
 
         if cfg.skip_seen and self.seen is not None:
             before = len(kept)

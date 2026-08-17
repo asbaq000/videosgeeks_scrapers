@@ -90,6 +90,14 @@ class Lead:
     # Which niche preset the run was searching. Constant within a run, but a
     # CSV outlives the run that made it and gets pasted next to another one.
     niche: str = ""
+    # Canonical country for the author, and which signal produced it
+    # ("location", "flag", "website", "bio-phone", "bio-mention"). Both empty
+    # when the author could not be placed — the common case on X, where the
+    # profile location field is optional and often blank. Filled by
+    # `leads/location.py`; the source is carried so a run can be audited per
+    # signal rather than only in aggregate.
+    location_country: str = ""
+    location_source: str = ""
 
     @property
     def is_lead(self) -> bool:
@@ -112,6 +120,11 @@ class Lead:
             "display_name": t.author.display_name,
             "profile_url": t.author.profile_url,
             "bio": t.author.bio,
+            # The raw profile field alongside the country derived from it, so a
+            # wrong call can be traced to the text that caused it.
+            "location": t.author.location,
+            "location_country": self.location_country,
+            "location_source": self.location_source,
             "followers": t.author.followers,
             "verified": t.author.verified or t.author.blue_verified,
             "professional_category": t.author.professional_category,

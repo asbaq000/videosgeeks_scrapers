@@ -84,8 +84,9 @@ the post never named a figure, which is most of them; money someone else earned
 
 ```
 verdict, score, budget, tweet_url, handle, display_name, followers, posted_at,
-age_hours, text, bio, profile_url, professional_category, likes, replies,
-views, niche, signals, reject_reason
+age_hours, text, bio, profile_url, professional_category, location,
+location_country, location_source, likes, replies, views, niche, signals,
+reject_reason
 ```
 
 - **budget** — the figure the post named, normalised: `$500/video`,
@@ -96,6 +97,10 @@ views, niche, signals, reject_reason
 - **text** — the full post. Long posts are read from X's `note_tweet` field, so
   nothing is cut off at 280 characters; newlines are flattened to spaces
   because some spreadsheet importers split a row on them.
+- **location** — the author's profile location field, exactly as they wrote it.
+  **location_country** is the country worked out from it, and
+  **location_source** says which signal produced that. All three are blank when
+  the author can't be placed. See [Filtering by country](#filtering-by-country).
 
 `-f json` carries the same fields plus `website`, `verified` and
 `matched_queries`, which the CSV leaves out to stay readable.
@@ -189,6 +194,78 @@ genuine seller pitch.
 
 ---
 
+## Filtering by country
+
+India, Pakistan, Bangladesh and the Philippines can be excluded from results.
+The list is a default, not a fixture — change it per run.
+
+**It starts in report mode and drops nothing.** That is deliberate: an X profile
+location is optional free text, so before trusting the filter you need to know
+what fraction of authors it can actually place. Run it once and read the stderr
+summary:
+
+```
+location: 143/210 authors placed (68%), 67 with no usable location
+  countries: India 34, United States 21, Pakistan 18, United Kingdom 12, ...
+  sources: location 121, flag 14, bio-phone 6, website 2
+  would drop 61 of 210 if enforced (Bangladesh, India, Pakistan, Philippines) — --country-filter drop to enforce
+```
+
+Then enforce it:
+
+```bash
+x-leads --country-filter drop                          # cut the four defaults
+x-leads --country-filter drop --exclude-country egypt,nepal
+x-leads --country-filter drop --allow-country india     # keep India, cut the rest
+x-leads --country-filter off                            # skip the pass entirely
+```
+
+Excluded authors are **rejected, not deleted** — same as every other filter
+here, so `--include-rejected` still shows them with `author in India` as the
+reason. That is how you check the filter isn't eating real leads.
+
+### How the country is worked out
+
+Unlike the Upwork scraper — which reads a verified billing country — X gives a
+free-text field that people fill in however they like. So five signals are
+tried, strongest first, and `location_source` records which one answered:
+
+| Source | From | Example |
+|---|---|---|
+| `location` | profile location: country, ISO code, city or region | `Karachi`, `Mumbai, India`, `Cebu, PH` |
+| `flag` | flag emoji in the location or display name | `Dhaka 🇧🇩` |
+| `website` | the website's country TLD | `studio.com.pk` |
+| `bio-phone` | an international dialling code in the bio | `+92 300 1234567` |
+| `bio-mention` | an explicit "based in <place>" in the bio | `Editor based in Lahore` |
+
+The bulk of the work is a **city → country** table, because nobody in Lahore
+writes "Pakistan" in their location — they write "Lahore". Matching is on word
+boundaries, not substrings, so `Indiana` and `Indianapolis` resolve to the
+United States and `Manilla Road` matches nothing. Bare two-letter codes are only
+read as a whole comma-separated segment, which is what stops `Made in USA` from
+matching India and `Somewhere in Germany` from matching anything but Germany.
+
+Bare city names elsewhere in the bio are deliberately ignored: "I edit for
+creators in Mumbai and Dubai" says nothing about where the author lives.
+
+### Blank locations
+
+Authors who can't be placed are **kept** by default. A blank location is not
+evidence of anything, and on X it is the most common value — dropping unknowns
+means discarding a large number of real leads. If you want them gone anyway:
+
+```bash
+x-leads --country-filter drop --drop-unknown-location
+```
+
+If the audit shows a weak source misfiring, narrow `trusted_sources` on
+`LocationFilter` rather than removing the source — an untrusted source is still
+recorded in the CSV, just not acted on.
+
+The table is `x_leads/leads/location.py`; add cities there as you find gaps.
+
+---
+
 ## Tuning it
 
 **The phrase list** is `x_leads/niches/video_editing.json` — edit it, then
@@ -206,9 +283,13 @@ The classifier tests are built from real posts, each one a case that broke an
 earlier version of the rules. If a change breaks one, it broke something that
 was deliberately fixed.
 
+**The country list** is `x_leads/leads/location.py` — see
+[Filtering by country](#filtering-by-country).
+
 Getting too much? `--min-verdict warm`, or a shorter `--hours`.
 Too little? `--hours 72`, `--min-verdict cold`, or add phrases.
 Suspicious? `--include-rejected` shows what was cut and why.
+Wrong countries? `--country-filter report` and read the `sources:` line.
 
 ---
 
@@ -269,6 +350,7 @@ x_leads/
 ├── leads/
 │   ├── patterns.py         the ask / the offer / noise regexes
 │   ├── budget.py           the stated figure -> "$500/video"
+│   ├── location.py         profile location -> country, and the block list
 │   └── classifier.py       weights, thresholds, hard rules
 └── niches/video_editing.json
 ```
@@ -277,10 +359,17 @@ Use it as a library:
 
 ```python
 from x_leads import XLeadScraper, ScrapeConfig
+from x_leads.leads.location import LocationFilter
 
-result = await XLeadScraper(ScrapeConfig(hours=24, min_verdict="warm")).run()
+result = await XLeadScraper(ScrapeConfig(
+    hours=24,
+    min_verdict="warm",
+    location_filter=LocationFilter.default(mode="drop"),
+)).run()
 for lead in result.leads:
-    print(lead.verdict, lead.tweet.url, lead.signals)
+    print(lead.verdict, lead.location_country, lead.tweet.url, lead.signals)
+
+print(result.location_audit)   # coverage and per-country counts
 ```
 
 ---

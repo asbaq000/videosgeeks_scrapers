@@ -18,6 +18,7 @@ from x_leads.auth.session import (
 )
 from x_leads.errors import BrowserMissing, NotSignedIn, SearchBlocked, XLeadsError
 from x_leads.leads.classifier import Thresholds
+from x_leads.leads.location import DEFAULT_EXCLUDED_COUNTRIES, LocationFilter
 from x_leads.log_config import force_utf8_streams, init_logger
 from x_leads.niches import DEFAULT_NICHE, available, load_niche
 from x_leads.scraper import ScrapeConfig, XLeadScraper
@@ -34,6 +35,17 @@ examples:
   x-leads --include-rejected          everything, with the reason each was cut
   x-leads --login                     sign in (or re-sign-in) and exit
   x-leads --dry-run                   print the queries without running them
+
+country filtering:
+  x-leads                             reports where authors are, drops nothing
+  x-leads --country-filter drop       actually cut India/Pakistan/Bangladesh/
+                                      Philippines
+  x-leads --country-filter drop --exclude-country egypt,nepal
+  x-leads --country-filter off        skip the location pass entirely
+
+Start with the default 'report' mode and read the coverage line on stderr. An X
+profile location is optional free text, so the filter can only judge the
+authors who filled it in; that percentage decides whether dropping is worth it.
 
 The first run opens a browser window to sign in to X. After that the saved
 session is reused and every run is headless.
@@ -72,6 +84,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-rejected", action="store_true",
         help="also show filtered-out posts and why each was cut — the way to "
              "check the classifier is not eating real leads",
+    )
+
+    where = p.add_argument_group("where the author is")
+    where.add_argument(
+        "--country-filter", choices=LocationFilter.MODES, default="report",
+        metavar="MODE",
+        help="off | report | drop (default: report). 'report' records each "
+             "author's country and prints what it *would* have dropped, "
+             "without dropping it — run that first, because an X profile "
+             "location is optional and often blank, and the coverage number "
+             "is what tells you whether dropping is safe.",
+    )
+    where.add_argument(
+        "--exclude-country", action="append", default=[], metavar="NAME",
+        help=f"add a country to the block list (repeatable, or comma-separated). "
+             f"Default list: {', '.join(c.title() for c in DEFAULT_EXCLUDED_COUNTRIES)}",
+    )
+    where.add_argument(
+        "--allow-country", action="append", default=[], metavar="NAME",
+        help="remove a country from the block list (repeatable)",
+    )
+    where.add_argument(
+        "--drop-unknown-location", action="store_true",
+        help="with --country-filter drop, also cut authors whose location "
+             "cannot be read at all. Off by default: a blank location is the "
+             "most common value on X and is not evidence of anything, so this "
+             "discards a lot of real leads.",
     )
 
     limits = p.add_argument_group("how hard to work")
@@ -159,6 +198,27 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _country_args(values: list[str]) -> list[str]:
+    """Flatten repeated flags and comma-separated values into one list.
+
+    So `--exclude-country egypt --exclude-country nepal,kenya` and
+    `--exclude-country "egypt, nepal, kenya"` mean the same thing.
+    """
+    out: list[str] = []
+    for value in values or []:
+        out.extend(part.strip() for part in value.split(",") if part.strip())
+    return out
+
+
+def build_location_filter(args) -> LocationFilter:
+    return LocationFilter.build(
+        add=_country_args(args.exclude_country),
+        remove=_country_args(args.allow_country),
+        mode=args.country_filter,
+        drop_unknown=args.drop_unknown_location,
+    )
+
+
 # ---------------------------------------------------------------- subcommands
 def run_dry(args) -> int:
     niche = load_niche(args.niche)
@@ -241,6 +301,7 @@ async def run_scrape(args) -> int:
         login_timeout_s=args.login_timeout,
         verify_session=not args.skip_session_check,
         thresholds=Thresholds(),
+        location_filter=build_location_filter(args),
     )
 
     result = await XLeadScraper(cfg, seen=seen).run()
@@ -285,6 +346,8 @@ def _report(result, cfg) -> None:
             f"(--include-seen to show them again)",
             file=sys.stderr,
         )
+    for line in cfg.location_filter.report(result.location_audit):
+        print(line, file=sys.stderr)
     if s.errors:
         print(f"{len(s.errors)} errors: {'; '.join(s.errors[:3])}", file=sys.stderr)
 
