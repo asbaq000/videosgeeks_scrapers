@@ -29,6 +29,26 @@ are switching accounts; a working session can go straight to run 2.
 
 Want JSON instead? Drop `--format csv` and use `--out jobs.json`.
 
+## Countries
+
+India, Pakistan, Bangladesh, Egypt and the Philippines are excluded from every
+run. Nothing to add - it is the default.
+
+It only works with `--enrich-clients`, because that is the only stage that
+learns where the client is; without it you get a warning and no exclusions.
+Excluded jobs are still looked up before being dropped, so `--limit 10` with two
+Indian clients writes 8 rows - ask for a couple extra when you need a full ten.
+
+```
+--exclude-country "Nepal,Kenya"   add more countries
+--allow-country India             keep one of the five after all
+--no-country-filter               everywhere, no exclusions
+--drop-unknown-country            also drop rows where the lookup failed
+```
+
+Permanent change: put `EXCLUDED_COUNTRIES=India,Pakistan,Nepal` in `.env`
+(`none` turns it off).
+
 The Standard Run
 
 bash

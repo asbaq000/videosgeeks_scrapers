@@ -13,6 +13,7 @@ from upwork_scraper.cli import (
     build_enricher,
     ensure_signed_in,
     render,
+    resolve_country_filter,
     resolve_keywords,
     resolve_max_age,
     run_enrichment,
@@ -447,6 +448,188 @@ class TestEnrichmentWiring:
         args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
 
         run_enrichment(None, [_job("~a")], args)  # must not raise
+
+
+class TestResolveCountryFilter:
+
+    def _args(self, argv):
+        return build_parser().parse_args(argv)
+
+    @patch("upwork_scraper.cli.config")
+    def test_default_excludes_the_five(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert f.names == [
+            "Bangladesh", "Egypt", "India", "Pakistan", "Philippines"
+        ]
+        assert not f.drop_unknown
+
+    @patch("upwork_scraper.cli.config")
+    def test_no_country_filter_turns_it_off(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(self._args(["--no-country-filter"]))
+
+        assert not f.is_active
+
+    @patch("upwork_scraper.cli.config")
+    def test_exclude_country_adds(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--exclude-country", "Nepal,Kenya"])
+        )
+
+        assert f.status("Nepal") == "blocked"
+        assert f.status("Kenya") == "blocked"
+        assert f.status("India") == "blocked"
+
+    @patch("upwork_scraper.cli.config")
+    def test_allow_country_removes(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--allow-country", "India"])
+        )
+
+        assert f.status("India") == "allowed"
+        assert f.status("Pakistan") == "blocked"
+
+    @patch("upwork_scraper.cli.config")
+    def test_env_list_replaces_the_default(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = "Nepal, Latvia"
+
+        f = resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert f.names == ["Latvia", "Nepal"]
+        assert f.status("India") == "allowed"
+
+    @patch("upwork_scraper.cli.config")
+    def test_env_none_turns_it_off(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = "none"
+
+        assert not resolve_country_filter(self._args(["--enrich-clients"])).is_active
+
+    @patch("upwork_scraper.cli.config")
+    def test_drop_unknown_country_flag(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--drop-unknown-country"])
+        )
+
+        assert f.drop_unknown
+
+    @patch("upwork_scraper.cli.config")
+    def test_warns_when_nothing_will_be_enriched(self, mock_config, caplog):
+        """Without enrichment there is no country, so the filter cannot act."""
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        with caplog.at_level(logging.WARNING, logger="upwork_scraper.cli"):
+            resolve_country_filter(self._args([]))
+
+        assert "does not return the client's country" in caplog.text
+
+    @patch("upwork_scraper.cli.config")
+    def test_no_warning_with_enrichment(self, mock_config, caplog):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        with caplog.at_level(logging.WARNING, logger="upwork_scraper.cli"):
+            resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert "does not return" not in caplog.text
+
+
+class TestCountryFilterInEnrichment:
+
+    def _enricher(self, *countries):
+        from upwork_scraper.models.client_models import ClientInfo
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [
+            ClientInfo(cipher=f"~{i}", country=c)
+            for i, c in enumerate(countries)
+        ]
+        return enricher
+
+    def test_excluded_countries_are_dropped_from_the_output(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1"), _job("~2")]
+
+        kept = run_enrichment(
+            self._enricher("United States", "India", "Germany"),
+            jobs, args, CountryFilter.default(),
+        )
+
+        assert [j.cipher for j in kept] == ["~0", "~2"]
+
+    def test_kept_jobs_still_carry_their_client(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1")]
+
+        kept = run_enrichment(
+            self._enricher("Canada", "PHL"), jobs, args, CountryFilter.default()
+        )
+
+        assert [j.cipher for j in kept] == ["~0"]
+        assert kept[0].client.country == "Canada"
+
+    def test_no_filter_keeps_everything(self, tmp_path):
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1")]
+
+        kept = run_enrichment(self._enricher("India", "Egypt"), jobs, args, None)
+
+        assert [j.cipher for j in kept] == ["~0", "~1"]
+
+    def test_separate_client_file_excludes_dropped_clients(self, tmp_path):
+        """Both outputs must describe the same set of jobs."""
+        from upwork_scraper.country_filter import CountryFilter
+
+        out = tmp_path / "jobs.jsonl"
+        args = build_parser().parse_args(
+            ["--format", "jsonl", "--out", str(out), "--separate-clients"]
+        )
+
+        kept = run_enrichment(
+            self._enricher("United States", "India"),
+            [_job("~0"), _job("~1")], args, CountryFilter.default(),
+        )
+
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / "jobs.jsonl.clients.jsonl")
+            .read_text(encoding="utf-8").splitlines() if line
+        ]
+        assert [r["cipher"] for r in rows] == ["~0"]
+        assert [j.cipher for j in kept] == ["~0"]
+
+    def test_unenriched_jobs_survive_by_default(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~a"), _job("~b")]
+
+        kept = run_enrichment(None, jobs, args, CountryFilter.default())
+
+        assert [j.cipher for j in kept] == ["~a", "~b"]
+
+    def test_drop_unknown_removes_unenriched_jobs(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+
+        kept = run_enrichment(
+            None, [_job("~a")], args, CountryFilter.default(drop_unknown=True)
+        )
+
+        assert kept == []
 
 
 class TestClientOutputFormat:

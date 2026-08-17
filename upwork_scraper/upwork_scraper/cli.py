@@ -17,6 +17,11 @@ import sys
 import threading
 
 from upwork_scraper import config
+from upwork_scraper.country_filter import (
+    DEFAULT_EXCLUDED_COUNTRIES,
+    CountryFilter,
+    parse_country_list,
+)
 from upwork_scraper.enrich import (
     BROWSER_REQUIRED_HELP,
     BrowserFetcher,
@@ -219,6 +224,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-filter", action="store_true",
         help="keep every search result instead of applying the niche's relevance filter",
+    )
+    parser.add_argument(
+        "--exclude-country", action="append", default=None, metavar="COUNTRY",
+        help="drop jobs posted from this country. Repeat or comma-separate. "
+             "Adds to the default list ("
+             + ", ".join(c.title() for c in DEFAULT_EXCLUDED_COUNTRIES)
+             + "). Needs --enrich-clients, which is where country comes from.",
+    )
+    parser.add_argument(
+        "--allow-country", action="append", default=None, metavar="COUNTRY",
+        help="keep jobs from this country even though it is excluded by "
+             "default, e.g. --allow-country India",
+    )
+    parser.add_argument(
+        "--no-country-filter", action="store_true",
+        help="keep jobs from every country, including the default exclusions",
+    )
+    parser.add_argument(
+        "--drop-unknown-country", action="store_true",
+        help="also drop jobs whose country could not be determined (never "
+             "enriched, or the lookup failed). By default those are kept.",
     )
     parser.add_argument(
         "--backfill", action="store_true",
@@ -538,6 +564,42 @@ def resolve_max_age(args) -> float | None:
     return args.max_age
 
 
+def resolve_country_filter(args) -> CountryFilter:
+    """Build the country filter from flags and `EXCLUDED_COUNTRIES`.
+
+    Order: the env list (or the built-in default when unset), plus
+    `--exclude-country`, minus `--allow-country`. `--no-country-filter` wins
+    over all of it.
+
+    A warning fires when the filter is armed but nothing will be enriched,
+    because that combination silently keeps everything: country is only ever
+    known from a client lookup.
+    """
+    if args.no_country_filter:
+        LOGGER.info("Country filter off — keeping every country")
+        return CountryFilter()
+
+    country_filter = CountryFilter.build(
+        base=parse_country_list(config.EXCLUDED_COUNTRIES),
+        add=parse_queries(args.exclude_country),
+        remove=parse_queries(args.allow_country),
+        drop_unknown=args.drop_unknown_country,
+    )
+
+    if not country_filter.is_active:
+        LOGGER.info("Country filter off — no countries excluded")
+        return country_filter
+
+    LOGGER.info("Country filter: %s", country_filter.describe())
+    if not args.enrich_clients:
+        LOGGER.warning(
+            "Country filter is on but --enrich-clients is not: the search API "
+            "does not return the client's country, so nothing can be excluded. "
+            "Add --enrich-clients, or --no-country-filter to silence this."
+        )
+    return country_filter
+
+
 def probe_session_state(args) -> str:
     """Ask Upwork about the signed-in profile, then let go of it.
 
@@ -771,7 +833,7 @@ def apply_limit(jobs, args):
     return jobs[: args.limit]
 
 
-def run_enrichment(enricher, jobs, args) -> None:
+def run_enrichment(enricher, jobs, args, country_filter=None) -> list:
     """Separate pass over already-scraped jobs, attaching client details.
 
     The fetching stays its own stage — jobs are scraped in full first, and an
@@ -779,14 +841,21 @@ def run_enrichment(enricher, jobs, args) -> None:
     carries its poster's details under `client`, so a job can be qualified on
     client history without joining two files. `--separate-clients` restores the
     two-file behaviour.
+
+    Returns the jobs to actually emit. `country_filter` is applied here, at the
+    one point in the run where a country is known, and before the separate
+    client file is written so both outputs describe the same set of jobs.
     """
+    def _filtered(kept):
+        return country_filter.apply(kept) if country_filter else list(kept)
+
     if not enricher or not jobs:
-        return
+        return _filtered(jobs)
 
     targets = jobs[: args.enrich_limit] if args.enrich_limit else jobs
     results = enricher.enrich_all(targets)
     if not results:
-        return
+        return _filtered(jobs)
 
     by_cipher = {r.cipher: r for r in results}
     for job in jobs:
@@ -808,15 +877,22 @@ def run_enrichment(enricher, jobs, args) -> None:
                 "--login-status, or run --reset-login then --login."
             )
 
-    if not args.separate_clients:
-        return
+    kept = _filtered(jobs)
 
-    # Optional second copy in its own file, for anyone joining on cipher.
+    if not args.separate_clients:
+        return kept
+
+    # Optional second copy in its own file, for anyone joining on cipher. Only
+    # the clients of jobs that survived the filter — an excluded job's poster
+    # appearing here would contradict the main output.
     as_array = args.fmt == "json" and not args.watch
     suffix = "clients.json" if as_array else "clients.jsonl"
     out = args.clients_out or (f"{args.out}.{suffix}" if args.out else None)
 
-    records = [r.model_dump(mode="json") for r in results]
+    kept_ciphers = {j.cipher for j in kept}
+    records = [
+        r.model_dump(mode="json") for r in results if r.cipher in kept_ciphers
+    ]
     text = (
         json.dumps(records, indent=2, ensure_ascii=False)
         if as_array
@@ -824,6 +900,7 @@ def run_enrichment(enricher, jobs, args) -> None:
     )
     _emit(text, out)
     LOGGER.info("Client details also written to %s", out or "stdout")
+    return kept
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -854,6 +931,7 @@ def main(argv: list[str] | None = None) -> int:
     queries, niche = resolve_keywords(args)
     max_age_minutes = resolve_max_age(args)
     job_filter = None if (niche is None or args.no_filter) else niche.is_relevant
+    country_filter = resolve_country_filter(args)
 
     proxy_manager = (
         NoProxyManager() if args.no_proxy else build_proxy_manager(args.webshare_url)
@@ -894,7 +972,7 @@ def main(argv: list[str] | None = None) -> int:
         jobs = apply_limit(jobs, args)
         backfilled = [j.cipher for j in jobs if j.cipher]
 
-        run_enrichment(enricher, jobs, args)
+        jobs = run_enrichment(enricher, jobs, args, country_filter)
 
         text = render(jobs, fmt if args.watch else args.fmt)
         _emit(text, args.out)
@@ -914,7 +992,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         LOGGER.info("Scraped %d jobs", len(jobs))
         jobs = apply_limit(jobs, args)
-        run_enrichment(enricher, jobs, args)
+        jobs = run_enrichment(enricher, jobs, args, country_filter)
         _emit(render(jobs, args.fmt), args.out)
         return 0
 
@@ -946,7 +1024,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         jobs = apply_limit(jobs, args)
-        run_enrichment(enricher, jobs, args)
+        jobs = run_enrichment(enricher, jobs, args, country_filter)
+        if not jobs:
+            LOGGER.info("Every new job this cycle was filtered out")
+            continue
 
         text = render(jobs, fmt)
         if fmt == "csv" and wrote_header:

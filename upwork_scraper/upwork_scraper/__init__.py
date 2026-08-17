@@ -15,6 +15,12 @@ Typical use:
 """
 
 from upwork_scraper.auth.token_manager import TokenManager
+from upwork_scraper.country_filter import (
+    DEFAULT_EXCLUDED_COUNTRIES,
+    CountryFilter,
+    normalize_country,
+    parse_country_list,
+)
 from upwork_scraper.enrich import ClientEnricher, CircuitBreaker, HumanDelay
 from upwork_scraper.errors import TokenExpired, TokenFetchFailed
 from upwork_scraper.log_config import init_logger
@@ -36,6 +42,8 @@ __all__ = [
     "CircuitBreaker",
     "ClientEnricher",
     "ClientInfo",
+    "CountryFilter",
+    "DEFAULT_EXCLUDED_COUNTRIES",
     "HumanDelay",
     "Job",
     "JobList",
@@ -53,4 +61,6 @@ __all__ = [
     "fetch_jobs_page",
     "init_logger",
     "load_niche",
+    "normalize_country",
+    "parse_country_list",
 ]

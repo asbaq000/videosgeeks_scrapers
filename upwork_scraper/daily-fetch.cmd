@@ -9,6 +9,11 @@ REM Log:     logs\daily-YYYY-MM-DD.log
 REM
 REM Paced at 2-3.5 minutes between client lookups, so 8 jobs takes ~20 minutes.
 REM That slowness is deliberate - it keeps the footprint small.
+REM
+REM Jobs posted from India, Pakistan, Bangladesh, Egypt and the Philippines are
+REM dropped, so the CSV usually holds fewer rows than COUNT - the country is
+REM only known after the lookup, so an excluded job is fetched and then
+REM discarded. Ask for a few extra if you need a full N. See GUIDE.md 7b.
 
 setlocal
 cd /d "%~dp0"
