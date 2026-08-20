@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +11,9 @@ from upwork_scraper.cli import (
     build_parser,
     main,
     build_enricher,
+    ensure_signed_in,
     render,
+    resolve_country_filter,
     resolve_keywords,
     resolve_max_age,
     run_enrichment,
@@ -447,6 +450,188 @@ class TestEnrichmentWiring:
         run_enrichment(None, [_job("~a")], args)  # must not raise
 
 
+class TestResolveCountryFilter:
+
+    def _args(self, argv):
+        return build_parser().parse_args(argv)
+
+    @patch("upwork_scraper.cli.config")
+    def test_default_excludes_the_five(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert f.names == [
+            "Bangladesh", "Egypt", "India", "Pakistan", "Philippines"
+        ]
+        assert not f.drop_unknown
+
+    @patch("upwork_scraper.cli.config")
+    def test_no_country_filter_turns_it_off(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(self._args(["--no-country-filter"]))
+
+        assert not f.is_active
+
+    @patch("upwork_scraper.cli.config")
+    def test_exclude_country_adds(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--exclude-country", "Nepal,Kenya"])
+        )
+
+        assert f.status("Nepal") == "blocked"
+        assert f.status("Kenya") == "blocked"
+        assert f.status("India") == "blocked"
+
+    @patch("upwork_scraper.cli.config")
+    def test_allow_country_removes(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--allow-country", "India"])
+        )
+
+        assert f.status("India") == "allowed"
+        assert f.status("Pakistan") == "blocked"
+
+    @patch("upwork_scraper.cli.config")
+    def test_env_list_replaces_the_default(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = "Nepal, Latvia"
+
+        f = resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert f.names == ["Latvia", "Nepal"]
+        assert f.status("India") == "allowed"
+
+    @patch("upwork_scraper.cli.config")
+    def test_env_none_turns_it_off(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = "none"
+
+        assert not resolve_country_filter(self._args(["--enrich-clients"])).is_active
+
+    @patch("upwork_scraper.cli.config")
+    def test_drop_unknown_country_flag(self, mock_config):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        f = resolve_country_filter(
+            self._args(["--enrich-clients", "--drop-unknown-country"])
+        )
+
+        assert f.drop_unknown
+
+    @patch("upwork_scraper.cli.config")
+    def test_warns_when_nothing_will_be_enriched(self, mock_config, caplog):
+        """Without enrichment there is no country, so the filter cannot act."""
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        with caplog.at_level(logging.WARNING, logger="upwork_scraper.cli"):
+            resolve_country_filter(self._args([]))
+
+        assert "does not return the client's country" in caplog.text
+
+    @patch("upwork_scraper.cli.config")
+    def test_no_warning_with_enrichment(self, mock_config, caplog):
+        mock_config.EXCLUDED_COUNTRIES = None
+
+        with caplog.at_level(logging.WARNING, logger="upwork_scraper.cli"):
+            resolve_country_filter(self._args(["--enrich-clients"]))
+
+        assert "does not return" not in caplog.text
+
+
+class TestCountryFilterInEnrichment:
+
+    def _enricher(self, *countries):
+        from upwork_scraper.models.client_models import ClientInfo
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [
+            ClientInfo(cipher=f"~{i}", country=c)
+            for i, c in enumerate(countries)
+        ]
+        return enricher
+
+    def test_excluded_countries_are_dropped_from_the_output(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1"), _job("~2")]
+
+        kept = run_enrichment(
+            self._enricher("United States", "India", "Germany"),
+            jobs, args, CountryFilter.default(),
+        )
+
+        assert [j.cipher for j in kept] == ["~0", "~2"]
+
+    def test_kept_jobs_still_carry_their_client(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1")]
+
+        kept = run_enrichment(
+            self._enricher("Canada", "PHL"), jobs, args, CountryFilter.default()
+        )
+
+        assert [j.cipher for j in kept] == ["~0"]
+        assert kept[0].client.country == "Canada"
+
+    def test_no_filter_keeps_everything(self, tmp_path):
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~0"), _job("~1")]
+
+        kept = run_enrichment(self._enricher("India", "Egypt"), jobs, args, None)
+
+        assert [j.cipher for j in kept] == ["~0", "~1"]
+
+    def test_separate_client_file_excludes_dropped_clients(self, tmp_path):
+        """Both outputs must describe the same set of jobs."""
+        from upwork_scraper.country_filter import CountryFilter
+
+        out = tmp_path / "jobs.jsonl"
+        args = build_parser().parse_args(
+            ["--format", "jsonl", "--out", str(out), "--separate-clients"]
+        )
+
+        kept = run_enrichment(
+            self._enricher("United States", "India"),
+            [_job("~0"), _job("~1")], args, CountryFilter.default(),
+        )
+
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / "jobs.jsonl.clients.jsonl")
+            .read_text(encoding="utf-8").splitlines() if line
+        ]
+        assert [r["cipher"] for r in rows] == ["~0"]
+        assert [j.cipher for j in kept] == ["~0"]
+
+    def test_unenriched_jobs_survive_by_default(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+        jobs = [_job("~a"), _job("~b")]
+
+        kept = run_enrichment(None, jobs, args, CountryFilter.default())
+
+        assert [j.cipher for j in kept] == ["~a", "~b"]
+
+    def test_drop_unknown_removes_unenriched_jobs(self, tmp_path):
+        from upwork_scraper.country_filter import CountryFilter
+
+        args = build_parser().parse_args(["--out", str(tmp_path / "j.jsonl")])
+
+        kept = run_enrichment(
+            None, [_job("~a")], args, CountryFilter.default(drop_unknown=True)
+        )
+
+        assert kept == []
+
+
 class TestClientOutputFormat:
 
     def _run(self, argv, tmp_path):
@@ -552,6 +737,47 @@ class TestMergedClientOutput:
         rows = list(csv.DictReader(io.StringIO(render([_job("~a")], "csv"))))
 
         assert list(rows[0].keys()) == CSV_FIELDS
+
+    def test_csv_exports_every_client_field(self):
+        """CSV must not quietly export less than JSON.
+
+        An earlier CLIENT_CSV_FIELDS listed 14 of the 29 client fields and
+        dropped the rest in silence — including hire_rate, rating,
+        total_reviews and payment_verified, which are the whole reason the
+        enrichment stage (and signing in) exists. Anyone who exported CSV
+        instead of JSON lost exactly the columns they qualify a client on.
+        """
+        from upwork_scraper.cli import CLIENT_CSV_FIELDS
+        from upwork_scraper.models.client_models import ClientInfo
+
+        exported = set(CLIENT_CSV_FIELDS)
+        available = set(ClientInfo.model_fields) | set(
+            ClientInfo.model_computed_fields
+        )
+        # `cipher` is the join key and already on the job row.
+        missing = available - exported - {"cipher"}
+
+        assert not missing, (
+            f"client fields present in JSON but absent from CSV: "
+            f"{sorted(missing)}. Add them to CLIENT_CSV_FIELDS."
+        )
+
+    def test_csv_client_columns_all_resolve(self):
+        """Every declared column must name a real field, not a typo."""
+        from upwork_scraper.cli import CLIENT_CSV_FIELDS
+        from upwork_scraper.models.client_models import ClientInfo
+
+        known = set(ClientInfo.model_fields) | set(ClientInfo.model_computed_fields)
+        unknown = [f for f in CLIENT_CSV_FIELDS if f not in known]
+
+        assert not unknown, f"CLIENT_CSV_FIELDS names fields that do not exist: {unknown}"
+
+    def test_csv_exposes_the_signed_in_only_fields(self):
+        rows = list(csv.DictReader(io.StringIO(render(self._enriched_jobs(), "csv"))))
+
+        for column in ("client_hire_rate", "client_rating", "client_total_reviews",
+                       "client_payment_verified", "client_avg_spend_per_hire"):
+            assert column in rows[0], f"{column} missing from the CSV export"
 
     def test_enrichment_attaches_by_cipher(self, tmp_path):
         from upwork_scraper.models.client_models import ClientInfo
@@ -737,8 +963,9 @@ class TestProfileIsolation:
         assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
 
     @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
     @patch("upwork_scraper.cli.config")
-    def test_logged_in_flag_switches_profile(self, mock_config, mock_browser):
+    def test_logged_in_flag_switches_profile(self, mock_config, _ensure, mock_browser):
         from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
 
         mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
@@ -758,3 +985,393 @@ class TestProfileIsolation:
         report_login_status(build_parser().parse_args([]))
 
         assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+
+class TestProfileIsolation:
+    """Anonymous and signed-in runs must not share a browser profile."""
+
+    def test_profiles_are_different_directories(self):
+        from upwork_scraper.enrich.browser_fetcher import (
+            DEFAULT_PROFILE_DIR,
+            LOGIN_PROFILE_DIR,
+            profile_for,
+        )
+
+        assert DEFAULT_PROFILE_DIR != LOGIN_PROFILE_DIR
+        assert profile_for(False) == DEFAULT_PROFILE_DIR
+        assert profile_for(True) == LOGIN_PROFILE_DIR
+
+    def test_logged_in_defaults_off(self):
+        assert build_parser().parse_args([]).logged_in is False
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.config")
+    def test_enrichment_uses_the_anonymous_profile_by_default(
+        self, mock_config, mock_browser
+    ):
+        from upwork_scraper.enrich.browser_fetcher import DEFAULT_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(build_parser().parse_args(["--enrich-clients"]), MagicMock())
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
+    @patch("upwork_scraper.cli.config")
+    def test_logged_in_flag_switches_profile(self, mock_config, _ensure, mock_browser):
+        from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(
+            build_parser().parse_args(["--enrich-clients", "--logged-in"]), MagicMock()
+        )
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli._sample_job_url", return_value="https://u/~a")
+    def test_login_status_checks_the_signed_in_profile(self, _url, mock_browser):
+        from upwork_scraper.cli import report_login_status
+        from upwork_scraper.enrich.browser_fetcher import LOGIN_PROFILE_DIR
+
+        mock_browser.return_value.start.return_value.fetch.return_value = (200, "<html>")
+        report_login_status(build_parser().parse_args([]))
+
+        assert mock_browser.call_args.kwargs["profile_dir"] == LOGIN_PROFILE_DIR
+
+
+class TestResetLogin:
+
+    def test_flag_defaults_off(self):
+        assert build_parser().parse_args([]).reset_login is False
+
+    def test_reports_when_there_is_nothing_to_reset(self, tmp_path, capsys, monkeypatch):
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import reset_login_profile
+
+        monkeypatch.setattr(cli_mod, "LOGIN_PROFILE_DIR", tmp_path / "missing")
+
+        assert reset_login_profile() == 0
+        assert "Nothing to reset" in capsys.readouterr().out
+
+    def test_deletes_the_profile(self, tmp_path, capsys, monkeypatch):
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import reset_login_profile
+
+        profile = tmp_path / "browser_profile_login"
+        (profile / "Default").mkdir(parents=True)
+        (profile / "session.json").write_text("[]", encoding="utf-8")
+        monkeypatch.setattr(cli_mod, "LOGIN_PROFILE_DIR", profile)
+
+        assert reset_login_profile() == 0
+        assert not profile.exists()
+        assert "Deleted" in capsys.readouterr().out
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    def test_login_saves_the_session(self, mock_browser, monkeypatch, capsys):
+        """The save call was missing once — this pins it."""
+        import upwork_scraper.cli as cli_mod
+        from upwork_scraper.cli import run_login
+
+        started = mock_browser.return_value.start.return_value
+        started.wait_for_login.return_value = True
+        started.save_session.return_value = 7
+        started.session_path = "C:/profile/session.json"
+        monkeypatch.setattr(cli_mod, "_sample_job_url", lambda: None)
+
+        run_login(build_parser().parse_args(["--login"]))
+
+        assert started.save_session.called
+        assert "Session saved (7 cookies)" in capsys.readouterr().out
+
+
+class TestAutoLogin:
+    """--logged-in should heal a dead session by itself, within limits."""
+
+    def _args(self, extra=()):
+        return build_parser().parse_args(["--enrich-clients", "--logged-in", *extra])
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="live")
+    def test_live_session_signs_in_nothing(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_signed_out_triggers_login_without_reset(
+        self, mock_probe, mock_reset, mock_login
+    ):
+        """No session is not a broken profile — do not throw the profile away."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 1
+        assert mock_reset.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_rate_limited_resets_before_signing_in(
+        self, mock_probe, mock_reset, mock_login
+    ):
+        """A flagged profile stays flagged; sign in on a clean one."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["rate_limited", "live"]
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_reset.call_count == 1
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_only_one_sign_in_attempt(self, mock_probe, mock_login):
+        """A refused sign-in must not loop."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "signed_out"]
+
+        assert ensure_signed_in(self._args()) is False
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.run_login", return_value=1)
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_failed_login_falls_back(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is False
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_watch_mode_never_opens_a_window(self, _probe, mock_login):
+        """An unattended loop must not block on a window nobody will see."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args(["--watch"])) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_no_auto_login_opts_out(self, _probe, mock_login):
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args(["--no-auto-login"])) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="unknown")
+    def test_unknown_proceeds_without_signing_in(self, _probe, mock_login):
+        """A network blip is not a reason to open a login window."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        assert ensure_signed_in(self._args()) is True
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=False)
+    @patch("upwork_scraper.cli.config")
+    def test_failed_healing_uses_the_anonymous_profile(
+        self, mock_config, _ensure, mock_browser
+    ):
+        from upwork_scraper.enrich.browser_fetcher import DEFAULT_PROFILE_DIR
+
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        enricher = build_enricher(self._args(), MagicMock())
+
+        assert enricher is not None
+        assert mock_browser.call_args.kwargs["profile_dir"] == DEFAULT_PROFILE_DIR
+
+    @patch("upwork_scraper.cli.BrowserFetcher")
+    @patch("upwork_scraper.cli.ensure_signed_in", return_value=True)
+    @patch("upwork_scraper.cli.config")
+    def test_anonymous_runs_never_call_the_healer(
+        self, mock_config, mock_ensure, mock_browser
+    ):
+        mock_config.ENRICH_MIN_DELAY, mock_config.ENRICH_MAX_DELAY = 4, 11
+        build_enricher(build_parser().parse_args(["--enrich-clients"]), MagicMock())
+
+        assert mock_ensure.call_count == 0
+
+
+class TestSessionPrompt:
+    """With someone at the keyboard, a dead session is their call to make.
+
+    `--reset-login` then `--logged-in` silently produced an anonymous run: the
+    file looked complete and every hire-rate cell was empty. Asking is the
+    point — the flag is only ever passed when hire rate is what the run is for.
+    """
+
+    def _args(self, extra=()):
+        return build_parser().parse_args(["--enrich-clients", "--logged-in", *extra])
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_choosing_reset_wipes_the_profile_then_signs_in(
+        self, mock_probe, mock_reset, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+        with patch("upwork_scraper.cli.ask_about_session", return_value="reset"):
+            assert ensure_signed_in(self._args()) is True
+
+        assert mock_reset.call_count == 1
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login", return_value=0)
+    @patch("upwork_scraper.cli.reset_login_profile")
+    @patch("upwork_scraper.cli.probe_session_state")
+    def test_choosing_sign_in_keeps_the_profile(
+        self, mock_probe, mock_reset, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        mock_probe.side_effect = ["signed_out", "live"]
+        with patch("upwork_scraper.cli.ask_about_session", return_value="login"):
+            assert ensure_signed_in(self._args()) is True
+
+        assert mock_reset.call_count == 0
+        assert mock_login.call_count == 1
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_choosing_anonymous_runs_without_signing_in(
+        self, _probe, mock_login, _ask
+    ):
+        from upwork_scraper.cli import ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session", return_value="anonymous"):
+            assert ensure_signed_in(self._args()) is False
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.run_login")
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_choosing_stop_aborts_the_run(self, _probe, mock_login, _ask):
+        from upwork_scraper.cli import RunAborted, ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session", return_value="stop"):
+            with pytest.raises(RunAborted):
+                ensure_signed_in(self._args())
+        assert mock_login.call_count == 0
+
+    @patch("upwork_scraper.cli.can_ask", return_value=True)
+    @patch("upwork_scraper.cli.probe_session_state", return_value="unknown")
+    def test_an_unconfirmed_session_asks_too(self, _probe, _ask):
+        """'Could not confirm' is exactly the state that burned this before."""
+        from upwork_scraper.cli import ensure_signed_in
+
+        with patch("upwork_scraper.cli.ask_about_session") as mock_ask:
+            mock_ask.return_value = "anonymous"
+            ensure_signed_in(self._args())
+
+        assert mock_ask.call_args.args[0] == "unknown"
+
+    @patch("upwork_scraper.cli.probe_session_state", return_value="signed_out")
+    def test_watch_mode_never_asks(self, _probe):
+        """An unattended loop must not stop on a question nobody will read."""
+        from upwork_scraper.cli import can_ask
+
+        assert can_ask(self._args(["--watch"])) is False
+        assert can_ask(self._args(["--no-auto-login"])) is False
+
+    def test_a_redirected_stdin_is_not_a_keyboard(self):
+        from upwork_scraper.cli import can_ask
+
+        with patch("sys.stdin") as stdin:
+            stdin.isatty.return_value = False
+            assert can_ask(self._args()) is False
+            stdin.isatty.return_value = True
+            assert can_ask(self._args()) is True
+
+    def test_the_default_answer_depends_on_the_diagnosis(self, monkeypatch, capsys):
+        """Signing in on top of a flagged profile just reproduces the block."""
+        from upwork_scraper.cli import ask_about_session
+
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        assert ask_about_session("signed_out") == "login"
+        assert ask_about_session("rate_limited") == "reset"
+
+    def test_an_unreadable_answer_does_not_pick_anonymous(self, monkeypatch):
+        from upwork_scraper.cli import ask_about_session
+
+        monkeypatch.setattr("builtins.input", lambda _: "yes please")
+        assert ask_about_session("signed_out") == "login"
+
+    def test_ctrl_c_at_the_prompt_stops(self, monkeypatch):
+        from upwork_scraper.cli import ask_about_session
+
+        def interrupt(_):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", interrupt)
+        assert ask_about_session("signed_out") == "stop"
+
+    def test_every_option_is_reachable_by_number(self, monkeypatch):
+        from upwork_scraper.cli import SESSION_OPTIONS, ask_about_session
+
+        for i, (key, _) in enumerate(SESSION_OPTIONS, 1):
+            monkeypatch.setattr("builtins.input", lambda _, n=i: str(n))
+            assert ask_about_session("signed_out") == key
+
+
+class TestAbortedRun:
+    @patch("upwork_scraper.cli.build_enricher")
+    def test_main_reports_the_abort_and_scrapes_nothing(self, mock_build, capsys):
+        from upwork_scraper.cli import RunAborted, main
+
+        mock_build.side_effect = RunAborted("Stopped before scraping.")
+
+        assert main(["--enrich-clients", "--logged-in"]) == 3
+        assert "Stopped before scraping." in capsys.readouterr().err
+
+
+class TestEnrichmentDeliveredWhatItPromised:
+    """A signed-in run that produced no hire rate did not do its job."""
+
+    def _args(self):
+        args = build_parser().parse_args(["--enrich-clients", "--logged-in"])
+        args.logged_in_active = True
+        return args
+
+    def _result(self, cipher, hire_rate):
+        from upwork_scraper.models.client_models import ClientInfo
+
+        return ClientInfo(cipher=cipher, hire_rate=hire_rate, fetch_status="ok")
+
+    def test_warns_when_every_hire_rate_is_empty(self, caplog):
+        from upwork_scraper.cli import run_enrichment
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [self._result("a", None)]
+        jobs = [MagicMock(cipher="a")]
+
+        with caplog.at_level(logging.WARNING):
+            run_enrichment(enricher, jobs, self._args())
+
+        assert "not one client came back with a hire rate" in caplog.text
+
+    def test_silent_when_the_session_delivered(self, caplog):
+        from upwork_scraper.cli import run_enrichment
+
+        enricher = MagicMock()
+        enricher.enrich_all.return_value = [
+            self._result("a", None), self._result("b", 89),
+        ]
+        jobs = [MagicMock(cipher="a"), MagicMock(cipher="b")]
+
+        with caplog.at_level(logging.WARNING):
+            run_enrichment(enricher, jobs, self._args())
+
+        assert "not one client came back" not in caplog.text

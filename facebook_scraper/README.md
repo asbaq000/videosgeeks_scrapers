@@ -110,9 +110,12 @@ The script will:
 4. For each post, click its timestamp to reveal the real permalink URL, then
    return to the feed. This is required because Facebook's current markup
    does not expose the real permalink as a static link -- only as something
-   revealed by an actual click (confirmed via live testing). Each click
-   navigates away and back, so `MAX_POSTS_PER_RUN` (default 15, near the top
-   of the script) caps how many posts get this treatment per run.
+   revealed by an actual click (confirmed via live testing). It keeps
+   scrolling and clicking through a group's FULL available post history
+   within `DAYS_BACK`, not just the first screenful -- it only stops once
+   `CONSECUTIVE_OLD_POSTS_TO_STOP` posts in a row are older than that
+   window, or `MAX_POSTS_PER_RUN` (a high safety ceiling, not a normal
+   stopping point) is hit.
 5. Filter, dedupe, and write new rows to your Google Sheet.
 
 Progress and any issues are printed to the console and written to
@@ -188,7 +191,7 @@ role rather than remote/freelance work (`classify_work_arrangement`):
 
 ## 9b. How the daily lead limit works
 
-`DAILY_LEAD_LIMIT = 20` (near the top of the script) caps how many new leads
+`MAX_LEADS_PER_RUN = 20` (near the top of the script) caps how many new leads
 get saved to Google Sheets per calendar day, tracked in
 `daily_lead_quota.json` as `{"date": ..., "count": ...}`:
 

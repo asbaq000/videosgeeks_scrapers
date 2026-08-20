@@ -55,6 +55,10 @@ After `pip install -e .` the `upwork-scraper` command works the same way.
 | `--max-age MINUTES` | — | Keep only jobs published within the last N minutes. |
 | `--max-age-days DAYS` | — | Same in days, e.g. `--max-age-days 2`. |
 | `--enrich-clients` | off | Separate pass for job-poster details (browser). |
+| `--exclude-country C` | India, Pakistan, Bangladesh, Egypt, Philippines | Drop jobs posted from this country. Repeat or comma-separate; adds to the default list. Needs `--enrich-clients`. |
+| `--allow-country C` | — | Keep a country the default list excludes. |
+| `--no-country-filter` | off | Keep every country, including the default exclusions. |
+| `--drop-unknown-country` | off | Also drop jobs whose country could not be determined. |
 | `--clients-out PATH` | `<out>.clients.jsonl` | Where client details go. |
 | `--enrich-delay MIN MAX` | `4 11` | Randomised seconds between client requests. |
 | `--enrich-limit N` | all | Only enrich the newest N jobs. |
@@ -207,6 +211,40 @@ Measured live: 8/8 jobs enriched at ~8s each.
 
 See [GUIDE.md](GUIDE.md) § 4c for setup and tuning.
 
+## Country filter
+
+Jobs posted from India, Pakistan, Bangladesh, Egypt and the Philippines are
+dropped by default.
+
+```bash
+# The default five, dropped
+python -m upwork_scraper --niche video --limit 20 --enrich-clients --out jobs.json
+
+# Add to the list, or take one off it
+python -m upwork_scraper ... --enrich-clients --exclude-country "Nepal,Sri Lanka"
+python -m upwork_scraper ... --enrich-clients --allow-country India
+
+# Turn it off entirely
+python -m upwork_scraper ... --no-country-filter
+```
+
+**It needs `--enrich-clients`.** The country is not in the search API — every
+country-bearing field there (`client`, `location`, `clientCountry`, `buyer`,
+`upworkHistoryData`) refuses a visitor token with an oauth2 scope error. It
+comes from the job page, which is what enrichment loads. A run without
+enrichment has no country on any job, so nothing can be excluded, and the CLI
+warns rather than quietly keeping everything.
+
+Because the country only exists after enrichment, an excluded job is still
+enriched before being dropped — it costs its ~8s either way. `--limit 20` with
+three excluded clients emits 17 jobs, not 20.
+
+Matching is alias-aware: `India`, `IND` and `IN` are the same country, as are
+`Philippines`, `PHL` and `Republic of the Philippines`. Jobs whose country could
+not be determined — never enriched, or the lookup failed — are **kept**, since a
+browser timeout is not evidence about where the client is. `--drop-unknown-country`
+reverses that.
+
 ## Library
 
 ```python
@@ -242,6 +280,30 @@ JSON-ready dict. Fields: `cipher`, `title`, `description`, `link`, `skills`,
 won't kill a long-running feed. Its seen-cipher set is capped at 20,000 entries
 (days of history) so memory stays flat.
 
+The country filter is a plain object with no dependencies on the rest of the
+package, so any integration downstream of enrichment can reuse the same rules:
+
+```python
+from upwork_scraper import CountryFilter
+
+blocked = CountryFilter.default()                       # the five, unknown kept
+strict = CountryFilter.default(drop_unknown=True)       # unknown dropped too
+custom = CountryFilter.build(add=["Nepal"], remove=["India"])
+mine = CountryFilter.from_names(["Nepal", "Latvia"])    # exactly these
+
+blocked.status("IND")           # "blocked"
+blocked.status("Canada")        # "allowed"
+blocked.status(None)            # "unknown"
+
+kept = blocked.apply(jobs)               # filter, logging what went and why
+kept, dropped = blocked.partition(jobs)  # both halves, order preserved
+blocked.allows(job)                      # one job — reads job.client.country
+```
+
+`allows` has the same signature as `Niche.is_relevant`, so it can be passed as
+`scrape(job_filter=...)` — though at scrape time no job has a country yet, so it
+only does real work once enrichment has run.
+
 Lower-level pieces are exported too, if you'd rather assemble them yourself:
 
 ```python
@@ -263,6 +325,7 @@ Every setting is optional; the scraper runs with no `.env` at all.
 | `MAX_PAGES` | `3` | Default pages per cycle. |
 | `PAGE_SIZE` | `50` | Jobs per page. |
 | `SCRAPE_INTERVAL` | `120` | Default watch-mode interval. |
+| `EXCLUDED_COUNTRIES` | India, Pakistan, Bangladesh, Egypt, Philippines | Comma-separated country list, replacing the default. `none` turns the filter off. |
 
 ## Proxies
 

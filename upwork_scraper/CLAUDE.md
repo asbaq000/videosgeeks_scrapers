@@ -18,6 +18,7 @@ upwork_scraper/
 ├── errors.py                   # TokenExpired, TokenFetchFailed
 ├── log_config.py               # init_logger() — all logs to stderr
 ├── scraper.py                  # UpworkScraper facade: scrape(), scrape_loop()
+├── country_filter.py           # CountryFilter — excluded-country rules, no deps
 ├── cli.py                      # argparse CLI, json/jsonl/csv rendering
 ├── niches/
 │   ├── __init__.py             # Niche dataclass, load_niche(), relevance check
@@ -46,10 +47,11 @@ upwork_scraper/
 | Dedup | `ON CONFLICT (cipher) DO NOTHING` | in-memory per batch / per loop |
 | Logs | INFO→stdout | everything→stderr (stdout is for data) |
 
-Additions: niche presets with relevance filtering, backfill of already-posted
-jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
-`--max-age`, missed-job warnings), `--pin-proxy`, JSON/JSONL/CSV output,
-`UpworkScraper` facade, CLI. User-facing setup lives in `GUIDE.md`.
+Additions: niche presets with relevance filtering, country exclusion, backfill of
+already-posted jobs, multi-keyword search, real-time feed controls
+(`--skip-backlog`, `--max-age`, missed-job warnings), `--pin-proxy`,
+JSON/JSONL/CSV output, `UpworkScraper` facade, CLI. User-facing setup lives in
+`GUIDE.md`.
 
 ## Key Decisions
 
@@ -142,6 +144,19 @@ jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
   block, 503 loaded-but-never-rendered. They were all reported as "Cloudflare —
   a real browser is required", which sent diagnosis down the wrong path. A 429
   trips the breaker immediately; retrying a soft block extends it.
+- **`live` is never a fallback verdict, and `--logged-in` never downgrades
+  silently**: `session_state()` used to return `live` whenever it failed to
+  recognise the page, so a freshly reset profile — no visitor nav yet because
+  nothing had rendered yet — passed as signed in, and the run enriched
+  anonymously into a CSV with an empty hire-rate column. Now: absent session
+  cookies settle it as `signed_out` with no page load at all; `live` requires
+  cookies *plus* a rendered page *plus* no visitor markup; an unrendered page
+  or a challenge is `unknown`. On top of that, an interactive `--logged-in` run
+  that cannot deliver hire rate asks what to do (sign in / reset then sign in /
+  anonymous / stop) instead of choosing for the user, and a signed-in run that
+  produced no hire rate at all says so after enrichment. Unattended runs
+  (`--watch`, `--no-auto-login`, non-tty stdin) keep the old auto behaviour —
+  there is nobody to ask.
 - **Anonymously, hire rate is impossible, and the payload proves it**: the page's Nuxt state
   blob carries the denominator's field (`postedCount`) and Upwork ships it as
   null to visitors — every sibling stat is populated, that one and `openCount`
@@ -164,6 +179,37 @@ jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
   env values only when neither argument is passed. Per-field fallback let an
   env API key silently override a URL the caller passed on purpose, and made
   the test suite depend on whatever `.env` held.
+- **Country is enrichment-only, so the country filter lives after enrichment**:
+  the search API cannot supply it at any price. Every country-bearing field on
+  `PubJobSearchResult` — `client`, `clientCountry`, `location`, `buyer`,
+  `attrs`, `clientRelation`, `upworkHistoryData` — and on `JobFullProfile`
+  answers a visitor token with `doesn't have enough oauth2 permissions/scopes`
+  (probed field by field, 2026-08-17; introspection is disabled for this
+  client). So filtering cannot happen at fetch time, an excluded job still
+  costs its ~8s enrichment before being dropped, and `--limit N` yields fewer
+  than N. The CLI warns when the filter is armed without `--enrich-clients`
+  rather than emitting an unfiltered file that looks filtered.
+- **The excluded-country default is India/Pakistan/Bangladesh/Egypt/Philippines,
+  and unknown countries are kept**: a failed page load is not evidence about
+  where a client is, and dropping jobs on a browser timeout silently loses
+  work. `--drop-unknown-country` opts into the strict reading. The list itself
+  is a default, not a policy baked into the code — `--exclude-country`,
+  `--allow-country`, `EXCLUDED_COUNTRIES` and `CountryFilter.from_names` all
+  replace it.
+- **Country matching is alias-based, not string equality**: the rendered card
+  gives "India" while other markup paths give "IND" (real values seen: "AUS",
+  "NLD", "USA"). Long name, ISO alpha-2, alpha-3 and official long forms
+  collapse to one key; anything outside the table matches on its own normalised
+  text, so a country can be excluded without a table entry.
+- **`CountryFilter` has no imports from the rest of the package**: it takes a
+  duck-typed job (`job.client.country`) rather than the `Job` model, so a
+  downstream integration — n8n, a database writer, an API — can apply the same
+  rules to its own records. `allows()` deliberately matches
+  `Niche.is_relevant`'s signature so it drops into `scrape(job_filter=...)`.
+- **The country filter runs inside `run_enrichment`, not after it**: the
+  separate `--separate-clients` file is written there, and a client whose job
+  was excluded appearing in it would contradict the main output. Filtering
+  before that write keeps both files describing one set of jobs.
 - **Retry once on token expiry**: `scrape()` invalidates the token and retries a
   single time, then raises. The original's controller looped forever instead —
   the equivalent here is `scrape_loop()`, which catches and backs off 30s.
@@ -171,9 +217,10 @@ jobs, multi-keyword search, real-time feed controls (`--skip-backlog`,
 ## Testing
 
 ```bash
-python -m pytest tests -q     # 189 tests, fully mocked, no network
+python -m pytest tests -q     # 435 tests, fully mocked, no network
 ```
 
 `tests/test_job_models.py`, `test_token_manager.py` and `test_proxy_manager.py`
 are ports of the original suite with rewritten imports. `test_job_fetcher.py`,
-`test_scraper.py` and `test_cli.py` cover what's new here.
+`test_scraper.py`, `test_cli.py` and `test_country_filter.py` cover what's new
+here.

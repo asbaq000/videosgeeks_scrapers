@@ -23,7 +23,8 @@ class ClientInfo(BaseModel):
     member_since: str | None = None
     country: str | None = None
     city: str | None = None
-    local_time: str | None = None
+    local_time: str | None = None       # clock time, e.g. "4:00 PM"
+    timezone: str | None = None         # zone, e.g. "Europe/Prague (UTC+02:00)"
 
     # --- Public: competition on this job -------------------------------
     proposals: str | None = None            # bucketed, e.g. "Less than 5", "5 to 10"
@@ -43,17 +44,18 @@ class ClientInfo(BaseModel):
     active_hires: int | None = None
     total_hours: float | None = None
     total_jobs_with_hires: int | None = None
+    avg_hourly_rate_paid: float | None = None
+    is_top_client: bool | None = None
     total_reviews: int | None = None
     rating: float | None = None
     open_jobs: int | None = None
     industry: str | None = None
     company_size: str | None = None
 
-    # --- Not available to logged-out visitors --------------------------
-    # `total_posted_jobs` is the blocker for a real hire rate. The field ships
-    # in the page payload as `postedCount` but Upwork leaves it null for
-    # visitors (checked on 4 established clients, 2026-08-12), so
-    # hire_rate = jobs-with-hires / jobs-posted cannot be computed.
+    # --- Signed-in only ------------------------------------------------
+    # `postedCount` is the denominator of the hire rate. Upwork leaves it null
+    # for logged-out visitors, so anonymous runs cannot compute a hire rate;
+    # a signed-in session gets both and `hire_rate` is derived from them.
     total_posted_jobs: int | None = None
     hire_rate: int | None = None
     payment_verified: bool | None = None

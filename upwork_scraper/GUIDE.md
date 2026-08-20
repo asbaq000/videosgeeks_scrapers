@@ -244,6 +244,41 @@ deliberate batches on jobs you already shortlisted:
 If you see `rate_limited` in the output, stop for a few hours. Retrying deepens
 it, so the run halts itself on the first occurrence rather than grinding on.
 
+### `--logged-in` never downgrades behind your back
+
+The whole point of the flag is hire rate, so a run that cannot deliver it asks
+rather than quietly producing a file with an empty column:
+
+```
+--logged-in was asked for, but this profile is not signed in.
+Hire rate and jobs-posted come only from a signed-in session; every
+other client field works either way.
+
+  [1] Sign in now — a browser window opens  <- default
+  [2] Reset this profile, then sign in (use if signing in keeps failing)
+  [3] Carry on without hire rate or jobs-posted
+  [4] Stop, change nothing
+```
+
+`[2]` is the default when the profile is rate limited, because signing in on
+top of a flagged profile just reproduces the block. `[4]` exits 3 before any
+scraping happens.
+
+Unattended runs are never asked — `--watch`, `--no-auto-login`, and anything
+whose stdin is not a terminal (a scheduled task, a pipe) keep the old
+behaviour: sign in automatically where allowed, otherwise log the reason and
+continue anonymously.
+
+Two things back that up, because a session check can only ever predict:
+
+- A profile holding no Upwork session cookies is signed out, decided without
+  loading a page. `--reset-login` followed immediately by `--logged-in` used to
+  report a live session and enrich anonymously — the reset profile has no
+  visitor nav to detect *because it has nothing yet*, and that absence was
+  being read as proof of a session.
+- After enrichment, a signed-in run where not one client returned a hire rate
+  says so, and points at `--login-status`.
+
 What the payload *does* give, none of which the card displays:
 
 | Field | Example |
@@ -419,6 +454,71 @@ last 30 minutes.
 
 ---
 
+## 7b. Excluding countries
+
+Jobs posted from **India, Pakistan, Bangladesh, Egypt and the Philippines** are
+dropped automatically. You do not have to ask for it — it is the default.
+
+**One thing to know: it only works with `--enrich-clients`.** Upwork's search
+does not tell us where the client is; that only appears on the job page, which
+is what the client lookup opens. Without `--enrich-clients` there is no country
+to check, so nothing gets excluded and you'll see this warning:
+
+```
+Country filter is on but --enrich-clients is not: the search API does not
+return the client's country, so nothing can be excluded.
+```
+
+A normal run therefore looks like this:
+
+```powershell
+.\.venv\Scripts\python.exe -m upwork_scraper `
+  --niche video --pages 1 --max-age-days 2 `
+  --limit 20 --enrich-clients `
+  --format csv --out jobs.csv
+```
+
+and reports what it dropped:
+
+```
+Country filter: excluding Bangladesh, Egypt, India, Pakistan, Philippines (unknown country: kept)
+Client details attached for 20/20 jobs
+Country filter dropped 3 of 20 jobs (India 2, Philippines 1)
+```
+
+Because the country is only known *after* the lookup, an excluded job still
+costs its ~8 seconds. `--limit 20` with 3 excluded clients writes 17 rows, not
+20 — ask for a few more than you need.
+
+**Changing the list:**
+
+| What you want | Add this |
+|---|---|
+| Also exclude somewhere else | `--exclude-country Nepal` (repeat, or `"Nepal,Kenya"`) |
+| Keep one of the five after all | `--allow-country India` |
+| Everywhere, no exclusions | `--no-country-filter` |
+| Also drop jobs where the lookup failed | `--drop-unknown-country` |
+
+To change the default permanently, put it in `.env` instead of typing it every
+run:
+
+```
+EXCLUDED_COUNTRIES=India,Pakistan,Bangladesh,Egypt,Philippines,Nepal
+```
+
+`EXCLUDED_COUNTRIES=none` turns it off.
+
+Spelling doesn't matter: `India`, `IND` and `IN` are all the same country, as
+are `Philippines`, `PHL` and `Republic of the Philippines`.
+
+**Jobs where the country couldn't be read are kept.** If a page fails to load,
+that tells us nothing about where the client is, and throwing the job away over
+a browser timeout loses work you'd have wanted. Those rows have an empty
+`client_country` and a `client_fetch_status` that isn't `ok`. Use
+`--drop-unknown-country` if you'd rather only ever see confirmed-good countries.
+
+---
+
 ## 8. If something goes wrong
 
 | Symptom | What it means |
@@ -452,4 +552,10 @@ Add `--log-level DEBUG` for more detail.
 
 # everything, unfiltered
 --niche video --no-filter
+
+# country exclusions (needs --enrich-clients to have any effect)
+--niche video --limit 20 --enrich-clients            # drops IN/PK/BD/EG/PH
+--enrich-clients --exclude-country "Nepal,Kenya"     # add more
+--enrich-clients --allow-country India               # keep one of the five
+--no-country-filter                                  # everywhere
 ```

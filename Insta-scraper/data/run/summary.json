@@ -1,0 +1,38 @@
+{
+  "run_at": "2026-08-13T05:25:54.374841+00:00",
+  "date": "2026-08-13",
+  "mode": "csv",
+  "criteria": {
+    "max_followers": 500000,
+    "min_followers": 10000,
+    "min_posts": 5,
+    "window_days": 7
+  },
+  "daily_limit": 10,
+  "keywords_picked": [
+    "Hidden Places Documentary",
+    "Victorian House Renovation",
+    "Self Improvement Vlog",
+    "Ancient Civilizations Documentary",
+    "Space Documentary",
+    "Homesteading Vlog",
+    "Classic Car Restoration",
+    "Survival Documentary",
+    "Mystery Documentary",
+    "Jewelry Making Vlog"
+  ],
+  "per_keyword": [
+    {
+      "keyword": "Hidden Places Documentary",
+      "lead": null,
+      "fetches": 0,
+      "reason": "rate limited"
+    }
+  ],
+  "leads_this_run": 0,
+  "delivered_today": 0,
+  "examined": 0,
+  "dry_run": false,
+  "stopped_early": true,
+  "elapsed_seconds": 16.3
+}
